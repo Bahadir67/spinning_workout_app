@@ -1024,25 +1024,40 @@ class _WorkoutDetailScreenState extends State<WorkoutDetailScreen> {
                     ),
                   ],
                 ),
-                const SizedBox(height: 6),
+                const SizedBox(height: 8),
                 const Divider(height: 1, color: Colors.grey),
-                const SizedBox(height: 6),
-                // Hedef Power
-                Text(
+                const SizedBox(height: 8),
+                // Hedef başlık
+                const Text(
                   'HEDEF',
-                  style: TextStyle(color: Colors.grey[500], fontSize: 10),
+                  style: TextStyle(color: Colors.grey, fontSize: 10),
                 ),
-                const SizedBox(height: 2),
-                Text(
-                  '${targetWatts}W',
-                  style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: Colors.yellow),
+                const SizedBox(height: 4),
+                // RPM ve Watt yan yana (horizontal)
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.end,
+                  children: [
+                    // RPM (solda)
+                    Text(
+                      '${_currentTargetCadence}',
+                      style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: Colors.blue),
+                    ),
+                    const SizedBox(width: 8),
+                    // Watt (sağda)
+                    Text(
+                      '${targetWatts}W',
+                      style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: Colors.yellow),
+                    ),
+                  ],
                 ),
-                const SizedBox(height: 2),
-                Text(
-                  '${_currentTargetCadence} RPM',
-                  style: TextStyle(fontSize: 12, color: Colors.grey[400]),
-                  overflow: TextOverflow.visible,
-                  maxLines: 1,
+                // Alt açıklamalar
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.end,
+                  children: [
+                    const Text('RPM', style: TextStyle(fontSize: 10, color: Colors.grey)),
+                    const SizedBox(width: 20),
+                    const Text('WATT', style: TextStyle(fontSize: 10, color: Colors.grey)),
+                  ],
                 ),
               ],
             ),
