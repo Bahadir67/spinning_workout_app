@@ -1,0 +1,64 @@
+name: spinning_workout_app
+description: Professional spinning workout app with HR tracking, TrainerRoad-style graphics, and Strava integration
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: '>=3.0.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  # UI & Graphics
+  fl_chart: ^0.65.0                    # TrainerRoad-style charts
+  cupertino_icons: ^1.0.2
+
+  # Bluetooth
+  flutter_blue_plus: ^1.32.0           # HR sensor connection
+  permission_handler: ^11.0.1          # Bluetooth permissions
+
+  # File handling
+  file_picker: ^8.1.2                  # ZWO file import
+  path_provider: ^2.1.1                # Local storage
+
+  # Strava integration
+  http: ^1.1.0                         # API calls
+  oauth2: ^2.0.2                       # Strava OAuth
+  url_launcher: ^6.2.1                 # Open browser for auth
+
+  # Notifications & Audio
+  audioplayers: ^5.2.1                 # Sound notifications
+  # vibration: ^1.8.3                    # Haptic feedback
+  # flutter_local_notifications: ^16.3.0 # Local notifications
+
+  # Data parsing
+  xml: ^6.3.0                          # ZWO file parsing
+
+  # Utils
+  intl: ^0.18.1                        # Date formatting
+  shared_preferences: ^2.2.2           # Settings storage
+
+  # Audio
+  flutter_tts: ^4.0.2                  # Text-to-Speech for voice announcements
+
+  # Screen
+  wakelock_plus: ^1.2.0                # Keep screen awake during workout
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^3.0.0
+
+flutter:
+  uses-material-design: true
+
+  # Add sound assets for notifications
+  assets:
+    - assets/sounds/
+
+  # Add fonts if needed
+  # fonts:
+  #   - family: Roboto
+  #     fonts:
+  #       - asset: fonts/Roboto-Regular.ttf
