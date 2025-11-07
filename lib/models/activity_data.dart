@@ -1,4 +1,5 @@
 import 'dart:typed_data';
+import 'dart:convert';
 
 /// Completed activity data for export
 class ActivityData {
@@ -86,6 +87,7 @@ class ActivityData {
     'tss': tss,
     'intensityFactor': intensityFactor,
     'kilojoules': kilojoules,
+    'graphScreenshot': graphScreenshot != null ? base64Encode(graphScreenshot!) : null,
   };
 
   factory ActivityData.fromJson(Map<String, dynamic> json) {
@@ -114,7 +116,9 @@ class ActivityData {
       tss: json['tss'].toDouble(),
       intensityFactor: json['intensityFactor'].toDouble(),
       kilojoules: json['kilojoules'].toDouble(),
-      graphScreenshot: null, // Screenshots not saved in history to save space
+      graphScreenshot: json['graphScreenshot'] != null
+          ? base64Decode(json['graphScreenshot'])
+          : null,
     );
   }
 }
