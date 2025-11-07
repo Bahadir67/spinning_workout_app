@@ -12,6 +12,7 @@ import '../services/bluetooth_service.dart';
 import 'workout_detail_screen.dart';
 import 'hr_connection_screen.dart';
 import 'workout_history_screen.dart';
+import 'coach_settings_screen.dart';
 
 class WorkoutListScreen extends StatefulWidget {
   const WorkoutListScreen({super.key});
@@ -529,6 +530,19 @@ class _WorkoutListScreenState extends State<WorkoutListScreen> {
                 context,
                 MaterialPageRoute(
                   builder: (context) => const WorkoutHistoryScreen(),
+                ),
+              );
+            },
+          ),
+          // AI Coach Ayarları
+          IconButton(
+            icon: const Icon(Icons.psychology),
+            tooltip: 'AI Coach Ayarları',
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => const CoachSettingsScreen(),
                 ),
               );
             },

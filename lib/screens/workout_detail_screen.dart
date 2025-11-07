@@ -11,7 +11,10 @@ import 'package:screenshot/screenshot.dart';
 import '../models/workout.dart';
 import '../models/activity_data.dart';
 import '../models/workout_state.dart' show WorkoutState, SavedHRPoint;
+import '../models/coach_message.dart';
 import '../services/bluetooth_service.dart';
+import '../services/ai_coach_service.dart';
+import '../widgets/coach_message_overlay.dart';
 import 'workout_summary_screen.dart';
 import 'hr_connection_screen.dart';
 
@@ -66,6 +69,11 @@ class _WorkoutDetailScreenState extends State<WorkoutDetailScreen> {
   // Screenshot için
   final ScreenshotController _screenshotController = ScreenshotController();
 
+  // AI Coach
+  final AICoachService _coachService = AICoachService();
+  CoachMessage? _currentCoachMessage;
+  int _lastCoachCheckSecond = -1;
+
   @override
   void initState() {
     super.initState();
@@ -92,6 +100,9 @@ class _WorkoutDetailScreenState extends State<WorkoutDetailScreen> {
 
     // Kaydedilmiş durum kontrolü
     _checkSavedState();
+
+    // AI Coach'ı başlat
+    _coachService.initialize();
   }
 
   /// Bluetooth HR sensörünü başlat
@@ -202,6 +213,9 @@ class _WorkoutDetailScreenState extends State<WorkoutDetailScreen> {
 
         // Durumu kaydet
         _saveWorkoutState();
+
+        // AI Coach kontrolü
+        _checkCoachMessage();
 
         // Antrenman bitti mi?
         if (_elapsedSeconds >= widget.workout.durationSeconds) {
@@ -334,6 +348,9 @@ class _WorkoutDetailScreenState extends State<WorkoutDetailScreen> {
     _timer?.cancel();
     _hrSubscription?.cancel();
     _audioPlayer.dispose();
+    // AI Coach overlay'ini kapat
+    CoachMessageManager.hide();
+    _coachService.reset();
     // Orientation'ı geri al
     SystemChrome.setPreferredOrientations([
       DeviceOrientation.portraitUp,
@@ -374,6 +391,9 @@ class _WorkoutDetailScreenState extends State<WorkoutDetailScreen> {
 
         // Durumu her saniye kaydet
         _saveWorkoutState();
+
+        // AI Coach kontrolü
+        _checkCoachMessage();
 
         // Antrenman bitti mi?
         if (_elapsedSeconds >= widget.workout.durationSeconds) {
@@ -516,6 +536,63 @@ class _WorkoutDetailScreenState extends State<WorkoutDetailScreen> {
         _elapsedSeconds,
         _currentHR,
       ));
+    }
+  }
+
+  // AI Coach mesajlarını kontrol et
+  Future<void> _checkCoachMessage() async {
+    // Çok sık kontrol etme (her saniye değil)
+    if (_elapsedSeconds == _lastCoachCheckSecond) return;
+    _lastCoachCheckSecond = _elapsedSeconds;
+
+    // Segment bilgilerini bul
+    int segmentStartTime = 0;
+    WorkoutSegment? currentSegment;
+    int segmentElapsed = 0;
+
+    for (var segment in widget.workout.segments) {
+      if (_elapsedSeconds >= segmentStartTime &&
+          _elapsedSeconds < segmentStartTime + segment.durationSeconds) {
+        currentSegment = segment;
+        segmentElapsed = _elapsedSeconds - segmentStartTime;
+        break;
+      }
+      segmentStartTime += segment.durationSeconds;
+    }
+
+    if (currentSegment == null) return;
+
+    // Coach context oluştur
+    final context = CoachContext(
+      currentHeartRate: _currentHR > 0 ? _currentHR : null,
+      averageHeartRate: _hrHistory.isNotEmpty
+          ? _hrHistory.map((h) => h.bpm).reduce((a, b) => a + b) ~/ _hrHistory.length
+          : null,
+      maxHeartRate: 185, // TODO: Kullanıcıdan al
+      currentPower: _currentTargetPower,
+      targetPower: _currentTargetPower,
+      currentCadence: 85, // TODO: Gerçek kadans sensöründen al
+      targetCadence: _currentTargetCadence,
+      segmentType: currentSegment.type.toString().split('.').last,
+      segmentName: currentSegment.name ?? currentSegment.type.toString(),
+      elapsedSeconds: _elapsedSeconds,
+      segmentDurationSeconds: currentSegment.durationSeconds,
+      segmentElapsedSeconds: segmentElapsed,
+      ftp: widget.workout.ftp,
+    );
+
+    // Mesaj üret
+    try {
+      final message = await _coachService.generateMessage(context: context);
+      if (message != null && mounted) {
+        setState(() {
+          _currentCoachMessage = message;
+        });
+        // Overlay göster
+        CoachMessageManager.show(context, message);
+      }
+    } catch (e) {
+      print('Coach mesaj hatası: $e');
     }
   }
 
