@@ -147,12 +147,12 @@ class _CoachSettingsScreenState extends State<CoachSettingsScreen> {
                         labelText: 'Model Seç',
                         border: OutlineInputBorder(),
                       ),
-                      items: [
-                        DropdownMenuItem(
+                      items: const [
+                        DropdownMenuItem<String>(
                           value: 'google/gemini-flash-1.5',
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
-                            children: const [
+                            children: [
                               Text('Gemini Flash 1.5'),
                               Text(
                                 'Hızlı & Ucuz (~\$0.002/antrenman)',
@@ -161,11 +161,11 @@ class _CoachSettingsScreenState extends State<CoachSettingsScreen> {
                             ],
                           ),
                         ),
-                        DropdownMenuItem(
+                        DropdownMenuItem<String>(
                           value: 'meta-llama/llama-3.1-70b-instruct',
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
-                            children: const [
+                            children: [
                               Text('Llama 3.1 70B'),
                               Text(
                                 'Ücretsiz - Orta (~\$0.00)',
@@ -174,11 +174,11 @@ class _CoachSettingsScreenState extends State<CoachSettingsScreen> {
                             ],
                           ),
                         ),
-                        DropdownMenuItem(
+                        DropdownMenuItem<String>(
                           value: 'anthropic/claude-3-haiku',
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
-                            children: const [
+                            children: [
                               Text('Claude 3 Haiku'),
                               Text(
                                 'En Kaliteli (~\$0.005/antrenman)',
