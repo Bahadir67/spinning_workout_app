@@ -13,6 +13,7 @@ import '../models/activity_data.dart';
 import '../models/workout_state.dart' show WorkoutState, SavedHRPoint;
 import '../services/bluetooth_service.dart';
 import 'workout_summary_screen.dart';
+import 'hr_connection_screen.dart';
 
 class WorkoutDetailScreen extends StatefulWidget {
   final Workout workout;
@@ -240,6 +241,51 @@ class _WorkoutDetailScreenState extends State<WorkoutDetailScreen> {
     await prefs.remove('workout_state');
   }
 
+  /// HR bağlı değilse uyarı dialogu göster
+  Future<bool?> _showHRWarningDialog() async {
+    return showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => AlertDialog(
+        title: Row(
+          children: const [
+            Icon(Icons.warning, color: Colors.orange),
+            SizedBox(width: 8),
+            Text('HR Sensörü Bağlı Değil'),
+          ],
+        ),
+        content: const Text(
+          'Kalp atış hızı sensörü bağlı değil. Antrenman sırasında HR verisi kaydedilmeyecek.\n\n'
+          'Yine de devam etmek istiyor musunuz?',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('İptal'),
+          ),
+          TextButton(
+            onPressed: () async {
+              Navigator.pop(context, false);
+              // HR bağlama ekranına git
+              await Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => const HRConnectionScreen(),
+                ),
+              );
+            },
+            child: const Text('HR Bağla'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Devam Et'),
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.orange),
+          ),
+        ],
+      ),
+    );
+  }
+
   /// Tarih formatla
   String _formatDateTime(DateTime dateTime) {
     final now = DateTime.now();
@@ -303,7 +349,15 @@ class _WorkoutDetailScreenState extends State<WorkoutDetailScreen> {
   }
 
   // Antrenmana başla
-  void _startWorkout() {
+  void _startWorkout() async {
+    // HR bağlı değilse uyarı göster
+    if (!_isHRConnected) {
+      final shouldContinue = await _showHRWarningDialog();
+      if (shouldContinue != true) {
+        return; // Kullanıcı iptal etti veya HR bağlamak istiyor
+      }
+    }
+
     setState(() {
       _isRunning = true;
       _isPaused = false;
@@ -698,6 +752,31 @@ class _WorkoutDetailScreenState extends State<WorkoutDetailScreen> {
                         _buildCompactMetric('Kalan', _formatTime(remainingSeconds), Icons.timer_outlined),
                         const SizedBox(height: 10),
                         _buildHRMetricWithStatus(),
+
+                        // HR bağlama butonu (HR bağlı değilse göster)
+                        if (!_isHRConnected) ...[
+                          const SizedBox(height: 8),
+                          OutlinedButton.icon(
+                            onPressed: () async {
+                              setState(() {
+                                _isMenuVisible = false;
+                              });
+                              await Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (context) => const HRConnectionScreen(),
+                                ),
+                              );
+                            },
+                            icon: const Icon(Icons.bluetooth, size: 16),
+                            label: const Text('HR Bağla', style: TextStyle(fontSize: 12)),
+                            style: OutlinedButton.styleFrom(
+                              foregroundColor: Colors.red,
+                              side: const BorderSide(color: Colors.red),
+                              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                            ),
+                          ),
+                        ],
 
                         const SizedBox(height: 14),
                         const Divider(height: 1, color: Colors.grey),
