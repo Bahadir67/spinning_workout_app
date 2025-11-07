@@ -9,11 +9,11 @@ class CoachMessageOverlay extends StatefulWidget {
   final Duration displayDuration;
 
   const CoachMessageOverlay({
-    Key? key,
+    super.key,
     this.message,
     this.onDismiss,
     this.displayDuration = const Duration(seconds: 8),
-  }) : super(key: key);
+  });
 
   @override
   State<CoachMessageOverlay> createState() => _CoachMessageOverlayState();

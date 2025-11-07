@@ -3,7 +3,7 @@ import '../services/ai_coach_service.dart';
 
 /// AI Coach ayarları ekranı
 class CoachSettingsScreen extends StatefulWidget {
-  const CoachSettingsScreen({Key? key}) : super(key: key);
+  const CoachSettingsScreen({super.key});
 
   @override
   State<CoachSettingsScreen> createState() => _CoachSettingsScreenState();
@@ -147,12 +147,12 @@ class _CoachSettingsScreenState extends State<CoachSettingsScreen> {
                         labelText: 'Model Seç',
                         border: OutlineInputBorder(),
                       ),
-                      items: const [
+                      items: [
                         DropdownMenuItem(
                           value: 'google/gemini-flash-1.5',
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
+                            children: const [
                               Text('Gemini Flash 1.5'),
                               Text(
                                 'Hızlı & Ucuz (~\$0.002/antrenman)',
@@ -165,7 +165,7 @@ class _CoachSettingsScreenState extends State<CoachSettingsScreen> {
                           value: 'meta-llama/llama-3.1-70b-instruct',
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
+                            children: const [
                               Text('Llama 3.1 70B'),
                               Text(
                                 'Ücretsiz - Orta (~\$0.00)',
@@ -178,7 +178,7 @@ class _CoachSettingsScreenState extends State<CoachSettingsScreen> {
                           value: 'anthropic/claude-3-haiku',
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
+                            children: const [
                               Text('Claude 3 Haiku'),
                               Text(
                                 'En Kaliteli (~\$0.005/antrenman)',
