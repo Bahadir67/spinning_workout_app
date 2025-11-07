@@ -1033,30 +1033,31 @@ class _WorkoutDetailScreenState extends State<WorkoutDetailScreen> {
                   style: TextStyle(color: Colors.grey, fontSize: 10),
                 ),
                 const SizedBox(height: 4),
-                // RPM ve Watt yan yana (horizontal)
+                // RPM ve Watt yan yana (horizontal) - her biri kendi column'unda
                 Row(
                   mainAxisAlignment: MainAxisAlignment.end,
                   children: [
                     // RPM (solda)
-                    Text(
-                      '${_currentTargetCadence}',
-                      style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: Colors.blue),
+                    Column(
+                      children: [
+                        Text(
+                          '${_currentTargetCadence}',
+                          style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: Colors.blue),
+                        ),
+                        const Text('RPM', style: TextStyle(fontSize: 10, color: Colors.grey)),
+                      ],
                     ),
-                    const SizedBox(width: 8),
+                    const SizedBox(width: 16),
                     // Watt (sağda)
-                    Text(
-                      '${targetWatts}W',
-                      style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: Colors.yellow),
+                    Column(
+                      children: [
+                        Text(
+                          '${targetWatts}W',
+                          style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: Colors.yellow),
+                        ),
+                        const Text('WATT', style: TextStyle(fontSize: 10, color: Colors.grey)),
+                      ],
                     ),
-                  ],
-                ),
-                // Alt açıklamalar
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.end,
-                  children: [
-                    const Text('RPM', style: TextStyle(fontSize: 10, color: Colors.grey)),
-                    const SizedBox(width: 20),
-                    const Text('WATT', style: TextStyle(fontSize: 10, color: Colors.grey)),
                   ],
                 ),
               ],
