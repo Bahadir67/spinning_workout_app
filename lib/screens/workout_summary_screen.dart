@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../models/activity_data.dart';
 import '../services/strava_service.dart';
+import '../services/workout_history_service.dart';
 
 class WorkoutSummaryScreen extends StatefulWidget {
   final ActivityData activity;
@@ -14,12 +15,23 @@ class WorkoutSummaryScreen extends StatefulWidget {
 
 class _WorkoutSummaryScreenState extends State<WorkoutSummaryScreen> {
   final StravaService _stravaService = StravaService();
+  final WorkoutHistoryService _historyService = WorkoutHistoryService();
   bool _isUploading = false;
 
   @override
   void initState() {
     super.initState();
     _stravaService.loadSavedTokens();
+    _saveToHistory();
+  }
+
+  /// Save workout to history
+  Future<void> _saveToHistory() async {
+    try {
+      await _historyService.saveWorkout(widget.activity);
+    } catch (e) {
+      print('Error saving to history: $e');
+    }
   }
 
   Future<void> _uploadToStrava() async {
@@ -62,6 +74,19 @@ class _WorkoutSummaryScreenState extends State<WorkoutSummaryScreen> {
       // Upload activity
       try {
         final activityId = await _stravaService.uploadActivity(widget.activity);
+
+        // Upload screenshot if available
+        if (widget.activity.graphScreenshot != null) {
+          try {
+            await _stravaService.uploadPhotoToActivity(
+              activityId,
+              widget.activity.graphScreenshot!,
+            );
+          } catch (photoError) {
+            print('Photo upload warning: $photoError');
+            // Don't fail the whole process if photo upload fails
+          }
+        }
 
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(

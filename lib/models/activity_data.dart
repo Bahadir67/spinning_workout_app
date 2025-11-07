@@ -87,6 +87,36 @@ class ActivityData {
     'intensityFactor': intensityFactor,
     'kilojoules': kilojoules,
   };
+
+  factory ActivityData.fromJson(Map<String, dynamic> json) {
+    return ActivityData(
+      workoutName: json['workoutName'],
+      startTime: DateTime.parse(json['startTime']),
+      endTime: DateTime.parse(json['endTime']),
+      durationSeconds: json['durationSeconds'],
+      ftp: json['ftp'],
+      heartRateData: (json['heartRateData'] as List)
+          .map((d) => HeartRateDataPoint(d['timestamp'], d['bpm']))
+          .toList(),
+      avgHeartRate: json['avgHeartRate'],
+      maxHeartRate: json['maxHeartRate'],
+      powerData: (json['powerData'] as List)
+          .map((d) => PowerDataPoint(d['timestamp'], d['watts'].toDouble()))
+          .toList(),
+      avgPower: json['avgPower'].toDouble(),
+      maxPower: json['maxPower'].toDouble(),
+      normalizedPower: json['normalizedPower'].toDouble(),
+      cadenceData: (json['cadenceData'] as List)
+          .map((d) => CadenceDataPoint(d['timestamp'], d['rpm']))
+          .toList(),
+      avgCadence: json['avgCadence'],
+      maxCadence: json['maxCadence'],
+      tss: json['tss'].toDouble(),
+      intensityFactor: json['intensityFactor'].toDouble(),
+      kilojoules: json['kilojoules'].toDouble(),
+      graphScreenshot: null, // Screenshots not saved in history to save space
+    );
+  }
 }
 
 /// Heart rate data point

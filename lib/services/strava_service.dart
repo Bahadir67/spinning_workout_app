@@ -202,6 +202,52 @@ class StravaService {
     }
   }
 
+  /// Upload photo to activity
+  Future<bool> uploadPhotoToActivity(String activityId, List<int> photoBytes) async {
+    if (!isAuthenticated) {
+      throw Exception('Not authenticated');
+    }
+
+    try {
+      // Save photo to temp file
+      final tempDir = Directory.systemTemp;
+      final photoFile = File('${tempDir.path}/workout_graph_${DateTime.now().millisecondsSinceEpoch}.png');
+      await photoFile.writeAsBytes(photoBytes);
+
+      // Create multipart request
+      final request = http.MultipartRequest(
+        'POST',
+        Uri.parse('$API_URL/activities/$activityId/photos'),
+      );
+
+      request.headers['Authorization'] = 'Bearer $_accessToken';
+
+      // Add photo file
+      request.files.add(await http.MultipartFile.fromPath(
+        'file',
+        photoFile.path,
+        filename: 'workout_graph.png',
+      ));
+
+      // Send request
+      final streamedResponse = await request.send();
+      final response = await http.Response.fromStream(streamedResponse);
+
+      // Clean up temp file
+      await photoFile.delete();
+
+      if (response.statusCode == 201 || response.statusCode == 200) {
+        return true;
+      } else {
+        print('Photo upload failed: ${response.statusCode} - ${response.body}');
+        return false;
+      }
+    } catch (e) {
+      print('Photo upload error: $e');
+      return false;
+    }
+  }
+
   /// Get athlete profile
   Future<Map<String, dynamic>> getAthlete() async {
     if (!isAuthenticated) {

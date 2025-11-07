@@ -11,6 +11,7 @@ import '../services/workout_parser.dart';
 import '../services/bluetooth_service.dart';
 import 'workout_detail_screen.dart';
 import 'hr_connection_screen.dart';
+import 'workout_history_screen.dart';
 
 class WorkoutListScreen extends StatefulWidget {
   const WorkoutListScreen({super.key});
@@ -519,6 +520,19 @@ class _WorkoutListScreenState extends State<WorkoutListScreen> {
       appBar: AppBar(
         title: const Text('Spinning Workouts'),
         actions: [
+          // History butonu
+          IconButton(
+            icon: const Icon(Icons.history),
+            tooltip: 'Antrenman Geçmişi',
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => const WorkoutHistoryScreen(),
+                ),
+              );
+            },
+          ),
           // HR Sensörü butonu
           Stack(
             children: [
