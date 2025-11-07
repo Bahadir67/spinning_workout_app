@@ -1,10 +1,12 @@
 import 'dart:async';
+import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter_tts/flutter_tts.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:screenshot/screenshot.dart';
 import '../models/workout.dart';
 import '../models/activity_data.dart';
 import '../models/workout_state.dart' show WorkoutState, SavedHRPoint;
@@ -55,6 +57,9 @@ class _WorkoutDetailScreenState extends State<WorkoutDetailScreen> {
   double _chartWidth = 0;
   double _lastScale = 1.0;
   double _lastPanX = 0;
+
+  // Screenshot için
+  final ScreenshotController _screenshotController = ScreenshotController();
 
   @override
   void initState() {
@@ -467,8 +472,16 @@ class _WorkoutDetailScreenState extends State<WorkoutDetailScreen> {
       return;
     }
 
+    // Grafik screenshot'ını al
+    Uint8List? graphScreenshot;
+    try {
+      graphScreenshot = await _screenshotController.capture();
+    } catch (e) {
+      print('Screenshot capture error: $e');
+    }
+
     // Activity data oluştur
-    final activityData = _createActivityData();
+    final activityData = _createActivityData(graphScreenshot: graphScreenshot);
 
     // Özet ekranına git
     Navigator.pushReplacement(
@@ -480,7 +493,7 @@ class _WorkoutDetailScreenState extends State<WorkoutDetailScreen> {
   }
 
   // Activity data oluştur
-  ActivityData _createActivityData() {
+  ActivityData _createActivityData({Uint8List? graphScreenshot}) {
     // Power ve kadans verilerini oluştur
     List<PowerDataPoint> powerData = [];
     List<CadenceDataPoint> cadenceData = [];
@@ -535,10 +548,16 @@ class _WorkoutDetailScreenState extends State<WorkoutDetailScreen> {
     double intensityFactor = avgPower / widget.workout.ftp;
     double tss = (_elapsedSeconds * avgPower * intensityFactor) / (widget.workout.ftp * 3600) * 100;
 
+    // Workout tam tamamlanmadıysa ismine belirt
+    final isComplete = _elapsedSeconds >= widget.workout.durationSeconds;
+    final workoutName = isComplete
+        ? widget.workout.name
+        : '${widget.workout.name} (Incomplete)';
+
     return ActivityData(
       startTime: _startTime!,
       endTime: DateTime.now(),
-      workoutName: widget.workout.name,
+      workoutName: workoutName,
       durationSeconds: _elapsedSeconds,
       ftp: widget.workout.ftp,
       heartRateData: _hrHistory.map((h) => HeartRateDataPoint(h.seconds, h.bpm)).toList(),
@@ -554,6 +573,7 @@ class _WorkoutDetailScreenState extends State<WorkoutDetailScreen> {
       tss: tss,
       intensityFactor: intensityFactor,
       kilojoules: kilojoules,
+      graphScreenshot: graphScreenshot,
     );
   }
 
@@ -1097,84 +1117,90 @@ class _WorkoutDetailScreenState extends State<WorkoutDetailScreen> {
           }
         });
       },
-      child: LineChart(
-      LineChartData(
-        minX: _minX,
-        maxX: _maxX,
-        minY: 0,
-        maxY: maxPower * 1.2,
-        lineTouchData: LineTouchData(enabled: false),
-        titlesData: FlTitlesData(
-          show: true,
-          bottomTitles: AxisTitles(
-            sideTitles: SideTitles(
-              showTitles: true,
-              interval: 600, // Her 10 dakika
-              getTitlesWidget: (value, meta) {
-                final minutes = (value / 60).toInt();
-                return Padding(
-                  padding: const EdgeInsets.only(top: 4),
-                  child: Text('${minutes}\'', style: const TextStyle(fontSize: 10)),
-                );
-              },
-            ),
-          ),
-          leftTitles: AxisTitles(
-            sideTitles: SideTitles(
-              showTitles: true,
-              reservedSize: 40,
-              getTitlesWidget: (value, meta) {
-                return Text('${value.toInt()}W', style: const TextStyle(fontSize: 10));
-              },
-            ),
-          ),
-          topTitles: AxisTitles(sideTitles: SideTitles(showTitles: false)),
-          rightTitles: AxisTitles(sideTitles: SideTitles(showTitles: false)),
-        ),
-        gridData: FlGridData(
-          show: true,
-          drawVerticalLine: true,
-          verticalInterval: 600, // Her 10 dakika dikey çizgi
-          horizontalInterval: 50, // Her 50W yatay çizgi
-          getDrawingHorizontalLine: (value) {
-            return FlLine(
-              color: Colors.grey.withOpacity(0.2),
-              strokeWidth: 1,
-            );
-          },
-          getDrawingVerticalLine: (value) {
-            return FlLine(
-              color: Colors.grey.withOpacity(0.2),
-              strokeWidth: 1,
-            );
-          },
-        ),
-        borderData: FlBorderData(
-          show: true,
-          border: Border.all(color: Colors.grey.shade800),
-        ),
-        lineBarsData: [
-          ..._createColoredSegmentBars(),
-          // HR line overlay
-          if (_hrHistory.isNotEmpty) _createHRLine(maxPower * 1.2),
-        ],
-        extraLinesData: ExtraLinesData(
-          verticalLines: [
-            // Progress line (yeşil dikey çizgi)
-            if (_isRunning)
-              VerticalLine(
-                x: _elapsedSeconds.toDouble(),
-                color: Colors.green,
-                strokeWidth: 3,
-                dashArray: [8, 4],
-                label: VerticalLineLabel(
-                  show: true,
-                  labelResolver: (line) => '',
+      child: Screenshot(
+        controller: _screenshotController,
+        child: Container(
+          color: Colors.black, // Screenshot için arka plan rengi
+          child: LineChart(
+            LineChartData(
+              minX: _minX,
+              maxX: _maxX,
+              minY: 0,
+              maxY: maxPower * 1.2,
+              lineTouchData: LineTouchData(enabled: false),
+              titlesData: FlTitlesData(
+                show: true,
+                bottomTitles: AxisTitles(
+                  sideTitles: SideTitles(
+                    showTitles: true,
+                    interval: 600, // Her 10 dakika
+                    getTitlesWidget: (value, meta) {
+                      final minutes = (value / 60).toInt();
+                      return Padding(
+                        padding: const EdgeInsets.only(top: 4),
+                        child: Text('${minutes}\'', style: const TextStyle(fontSize: 10)),
+                      );
+                    },
+                  ),
                 ),
+                leftTitles: AxisTitles(
+                  sideTitles: SideTitles(
+                    showTitles: true,
+                    reservedSize: 40,
+                    getTitlesWidget: (value, meta) {
+                      return Text('${value.toInt()}W', style: const TextStyle(fontSize: 10));
+                    },
+                  ),
+                ),
+                topTitles: AxisTitles(sideTitles: SideTitles(showTitles: false)),
+                rightTitles: AxisTitles(sideTitles: SideTitles(showTitles: false)),
               ),
-          ],
+              gridData: FlGridData(
+                show: true,
+                drawVerticalLine: true,
+                verticalInterval: 600, // Her 10 dakika dikey çizgi
+                horizontalInterval: 50, // Her 50W yatay çizgi
+                getDrawingHorizontalLine: (value) {
+                  return FlLine(
+                    color: Colors.grey.withOpacity(0.2),
+                    strokeWidth: 1,
+                  );
+                },
+                getDrawingVerticalLine: (value) {
+                  return FlLine(
+                    color: Colors.grey.withOpacity(0.2),
+                    strokeWidth: 1,
+                  );
+                },
+              ),
+              borderData: FlBorderData(
+                show: true,
+                border: Border.all(color: Colors.grey.shade800),
+              ),
+              lineBarsData: [
+                ..._createColoredSegmentBars(),
+                // HR line overlay
+                if (_hrHistory.isNotEmpty) _createHRLine(maxPower * 1.2),
+              ],
+              extraLinesData: ExtraLinesData(
+                verticalLines: [
+                  // Progress line (yeşil dikey çizgi)
+                  if (_isRunning)
+                    VerticalLine(
+                      x: _elapsedSeconds.toDouble(),
+                      color: Colors.green,
+                      strokeWidth: 3,
+                      dashArray: [8, 4],
+                      label: VerticalLineLabel(
+                        show: true,
+                        labelResolver: (line) => '',
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          ),
         ),
-      ),
       ),
     );
   }
