@@ -1275,18 +1275,9 @@ class _WorkoutDetailScreenState extends State<WorkoutDetailScreen> {
 
   // HR çizgisini oluştur (overlay olarak power grafiği üzerinde)
   LineChartBarData _createHRLine(double maxY) {
-    // HR verilerini power scale'ine normalize et
-    // Tipik HR aralığı: 60-200 bpm
-    const double minHR = 60;
-    const double maxHR = 200;
-
+    // HR değerlerini direkt BPM cinsinden kullan (normalize etme)
     List<FlSpot> hrSpots = _hrHistory.map((hrPoint) {
-      // HR değerini power scale'ine map et
-      double normalizedHR = ((hrPoint.bpm - minHR) / (maxHR - minHR)) * maxY;
-      // Negatif değerleri ve maxY'yi aşanları kısıtla
-      normalizedHR = normalizedHR.clamp(0, maxY);
-
-      return FlSpot(hrPoint.seconds.toDouble(), normalizedHR);
+      return FlSpot(hrPoint.seconds.toDouble(), hrPoint.bpm.toDouble());
     }).toList();
 
     return LineChartBarData(
