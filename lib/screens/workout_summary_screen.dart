@@ -83,13 +83,11 @@ class _WorkoutSummaryScreenState extends State<WorkoutSummaryScreen> {
       try {
         final activityId = await _stravaService.uploadActivity(widget.activity);
 
-        // Wait a bit for Strava to fully process the activity before uploading photo
-        await Future.delayed(const Duration(seconds: 3));
-
         // Upload screenshot if available
+        // Note: uploadActivity already waits for activity to be ready via _waitForUpload()
         if (widget.activity.graphScreenshot != null) {
           try {
-            print('Waiting for activity to be ready before photo upload...');
+            print('Uploading photo to activity $activityId...');
             await _stravaService.uploadPhotoToActivity(
               activityId,
               widget.activity.graphScreenshot!,

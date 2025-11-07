@@ -192,14 +192,25 @@ class StravaService {
 
         if (response.statusCode == 200) {
           final data = jsonDecode(response.body);
+
+          // Check if upload is complete and no errors
           if (data['activity_id'] != null) {
-            return; // Upload complete
+            // Additional check: make sure there's no error
+            if (data['error'] == null && data['status'] != 'Your activity is still being processed.') {
+              print('Upload complete: Activity ID ${data['activity_id']} is ready');
+              return; // Upload complete and ready
+            } else {
+              print('Upload status: ${data['status']}');
+            }
           }
         }
       } catch (e) {
+        print('Waiting for upload: $e');
         // Continue waiting
       }
     }
+
+    print('Upload wait timeout - proceeding anyway');
   }
 
   /// Upload photo to activity
