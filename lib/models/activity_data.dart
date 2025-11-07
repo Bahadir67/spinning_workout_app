@@ -1,3 +1,5 @@
+import 'dart:typed_data';
+
 /// Completed activity data for export
 class ActivityData {
   final String workoutName;
@@ -27,6 +29,9 @@ class ActivityData {
   final double intensityFactor;
   final double kilojoules;
 
+  // Graph screenshot (optional)
+  final Uint8List? graphScreenshot;
+
   ActivityData({
     required this.workoutName,
     required this.startTime,
@@ -46,6 +51,7 @@ class ActivityData {
     required this.tss,
     required this.intensityFactor,
     required this.kilojoules,
+    this.graphScreenshot,
   });
 
   // Format duration as HH:MM:SS

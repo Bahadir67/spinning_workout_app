@@ -210,7 +210,13 @@ class _WorkoutSummaryScreenState extends State<WorkoutSummaryScreen> {
             // Detaylı metrikler
             _buildDetailedMetricsCard(),
             const SizedBox(height: 16),
-            
+
+            // Grafik screenshot (varsa)
+            if (widget.activity.graphScreenshot != null)
+              _buildGraphScreenshotCard(),
+            if (widget.activity.graphScreenshot != null)
+              const SizedBox(height: 16),
+
             // HR zone grafiği (opsiyonel)
             _buildHRZonesCard(),
             const SizedBox(height: 24),
@@ -360,6 +366,37 @@ class _WorkoutSummaryScreenState extends State<WorkoutSummaryScreen> {
             style: const TextStyle(fontWeight: FontWeight.bold),
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildGraphScreenshotCard() {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                const Icon(Icons.show_chart, color: Colors.blue),
+                const SizedBox(width: 8),
+                Text(
+                  'Workout Graph',
+                  style: Theme.of(context).textTheme.titleMedium,
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            ClipRRect(
+              borderRadius: BorderRadius.circular(8),
+              child: Image.memory(
+                widget.activity.graphScreenshot!,
+                fit: BoxFit.contain,
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
