@@ -72,8 +72,8 @@ class _CoachSettingsScreenState extends State<CoachSettingsScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Row(
-                    children: const [
+                  const Row(
+                    children: [
                       Icon(Icons.psychology, color: Colors.blue),
                       SizedBox(width: 8),
                       Text(
@@ -127,8 +127,8 @@ class _CoachSettingsScreenState extends State<CoachSettingsScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Row(
-                      children: const [
+                    const Row(
+                      children: [
                         Icon(Icons.memory, color: Colors.purple),
                         SizedBox(width: 8),
                         Text(
@@ -147,45 +147,18 @@ class _CoachSettingsScreenState extends State<CoachSettingsScreen> {
                         labelText: 'Model Seç',
                         border: OutlineInputBorder(),
                       ),
-                      items: const [
-                        DropdownMenuItem<String>(
+                      items: [
+                        const DropdownMenuItem<String>(
                           value: 'google/gemini-flash-1.5',
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text('Gemini Flash 1.5'),
-                              Text(
-                                'Hızlı & Ucuz (~\$0.002/antrenman)',
-                                style: TextStyle(fontSize: 12, color: Colors.grey),
-                              ),
-                            ],
-                          ),
+                          child: Text('Gemini Flash 1.5 (Hızlı & Ucuz)'),
                         ),
-                        DropdownMenuItem<String>(
+                        const DropdownMenuItem<String>(
                           value: 'meta-llama/llama-3.1-70b-instruct',
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text('Llama 3.1 70B'),
-                              Text(
-                                'Ücretsiz - Orta (~\$0.00)',
-                                style: TextStyle(fontSize: 12, color: Colors.grey),
-                              ),
-                            ],
-                          ),
+                          child: Text('Llama 3.1 70B (Ücretsiz)'),
                         ),
-                        DropdownMenuItem<String>(
+                        const DropdownMenuItem<String>(
                           value: 'anthropic/claude-3-haiku',
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text('Claude 3 Haiku'),
-                              Text(
-                                'En Kaliteli (~\$0.005/antrenman)',
-                                style: TextStyle(fontSize: 12, color: Colors.grey),
-                              ),
-                            ],
-                          ),
+                          child: Text('Claude 3 Haiku (En Kaliteli)'),
                         ),
                       ],
                       onChanged: (value) {
@@ -242,8 +215,8 @@ class _CoachSettingsScreenState extends State<CoachSettingsScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Row(
-                      children: const [
+                    const Row(
+                      children: [
                         Icon(Icons.schedule, color: Colors.orange),
                         SizedBox(width: 8),
                         Text(
@@ -290,9 +263,9 @@ class _CoachSettingsScreenState extends State<CoachSettingsScreen> {
               borderRadius: BorderRadius.circular(12),
               border: Border.all(color: Colors.blue.withOpacity(0.3)),
             ),
-            child: Column(
+            child: const Column(
               crossAxisAlignment: CrossAxisAlignment.start,
-              children: const [
+              children: [
                 Row(
                   children: [
                     Icon(Icons.info, color: Colors.blue),
