@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter_tts/flutter_tts.dart';
+import 'package:audioplayers/audioplayers.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:screenshot/screenshot.dart';
@@ -47,6 +48,9 @@ class _WorkoutDetailScreenState extends State<WorkoutDetailScreen> {
   int? _lastAnnouncedCadence;
   int _currentSegmentIndex = -1;
   int _currentSegmentRemainingSeconds = 0;
+
+  // Audio player için beep sesi
+  final AudioPlayer _audioPlayer = AudioPlayer();
 
   // Slide menu için
   bool _isMenuVisible = false;
@@ -283,6 +287,7 @@ class _WorkoutDetailScreenState extends State<WorkoutDetailScreen> {
   void dispose() {
     _timer?.cancel();
     _hrSubscription?.cancel();
+    _audioPlayer.dispose();
     // Orientation'ı geri al
     SystemChrome.setPreferredOrientations([
       DeviceOrientation.portraitUp,
@@ -1292,28 +1297,28 @@ class _WorkoutDetailScreenState extends State<WorkoutDetailScreen> {
   }
 
   // Segment countdown beep (son 5 saniye farklı tonlarda)
-  void _playSegmentCountdownBeep() {
-    // Son 5 saniyede beep çal
+  void _playSegmentCountdownBeep() async {
+    // Son 5 saniyede beep çal (TTS değil, gerçek beep sesi)
     if (_currentSegmentRemainingSeconds >= 1 && _currentSegmentRemainingSeconds <= 5) {
-      // Her saniye için farklı pitch
-      final pitchMap = {
-        5: 0.7,  // En düşük ton
-        4: 0.8,
-        3: 0.9,
-        2: 1.1,
-        1: 1.4,  // En yüksek ton
+      // Her saniye için farklı playback rate = farklı ton
+      final playbackRateMap = {
+        5: 0.7,  // En düşük ton (yavaş)
+        4: 0.85,
+        3: 1.0,  // Normal
+        2: 1.15,
+        1: 1.3,  // En yüksek ton (hızlı)
       };
 
-      final pitch = pitchMap[_currentSegmentRemainingSeconds] ?? 1.0;
+      final playbackRate = playbackRateMap[_currentSegmentRemainingSeconds] ?? 1.0;
 
-      // TTS ile sayı okut (farklı pitch ile)
-      _tts.setPitch(pitch);
-      _tts.speak(_currentSegmentRemainingSeconds.toString());
-
-      // Pitch'i geri al
-      Future.delayed(const Duration(milliseconds: 300), () {
-        _tts.setPitch(1.0);
-      });
+      try {
+        await _audioPlayer.stop();
+        await _audioPlayer.setPlaybackRate(playbackRate);
+        await _audioPlayer.setVolume(1.0);
+        await _audioPlayer.play(AssetSource('sounds/beep.mp3'));
+      } catch (e) {
+        print('Beep sound play error: $e');
+      }
     }
   }
 
