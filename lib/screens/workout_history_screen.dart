@@ -285,7 +285,10 @@ class _WorkoutHistoryScreenState extends State<WorkoutHistoryScreen> {
                 Navigator.push(
                   context,
                   MaterialPageRoute(
-                    builder: (context) => WorkoutSummaryScreen(activity: activity),
+                    builder: (context) => WorkoutSummaryScreen(
+                      activity: activity,
+                      saveToHistory: false, // Don't save again from history
+                    ),
                   ),
                 );
               },
