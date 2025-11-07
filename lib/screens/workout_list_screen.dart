@@ -6,6 +6,7 @@ import 'dart:io';
 import 'dart:convert';
 import 'package:path_provider/path_provider.dart';
 import '../models/workout.dart';
+import '../models/workout_state.dart';
 import '../services/workout_parser.dart';
 import '../services/bluetooth_service.dart';
 import 'workout_detail_screen.dart';
@@ -31,6 +32,89 @@ class _WorkoutListScreenState extends State<WorkoutListScreen> {
     _loadSettings();
     _loadWorkouts();
     _checkHRConnection();
+    _checkSavedWorkoutState();
+  }
+
+  /// Kaydedilmiş workout state kontrolü
+  Future<void> _checkSavedWorkoutState() async {
+    final prefs = await SharedPreferences.getInstance();
+    final savedStateJson = prefs.getString('workout_state');
+
+    if (savedStateJson != null) {
+      final savedState = WorkoutState.fromJsonString(savedStateJson);
+
+      if (savedState != null && savedState.isValid()) {
+        // Build tamamlandıktan sonra dialog göster
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) {
+            _showResumeWorkoutDialog(savedState);
+          }
+        });
+      } else {
+        // Geçersiz kayıt - temizle
+        await prefs.remove('workout_state');
+      }
+    }
+  }
+
+  /// Kaydedilmiş workout'a devam et dialog'u
+  Future<void> _showResumeWorkoutDialog(WorkoutState savedState) async {
+    final minutes = savedState.elapsedSeconds ~/ 60;
+    final seconds = savedState.elapsedSeconds % 60;
+
+    final result = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => AlertDialog(
+        title: const Text('Devam Eden Antrenman'),
+        content: Text(
+          'Tamamlanmamış bir antrenman bulundu:\n\n'
+          '${savedState.workout.name}\n'
+          'Geçen süre: $minutes:${seconds.toString().padLeft(2, '0')}\n'
+          'Kayıt: ${_formatTimeDiff(savedState.saveTime)}\n\n'
+          'Kaldığınız yerden devam etmek ister misiniz?',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () async {
+              // İptal - kaydı temizle
+              final prefs = await SharedPreferences.getInstance();
+              await prefs.remove('workout_state');
+              Navigator.pop(context, false);
+            },
+            child: const Text('İptal Et'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Devam Et'),
+          ),
+        ],
+      ),
+    );
+
+    if (result == true && mounted) {
+      // Workout detail screen'e git
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => WorkoutDetailScreen(workout: savedState.workout),
+        ),
+      );
+    }
+  }
+
+  /// Zaman farkını formatla
+  String _formatTimeDiff(DateTime dateTime) {
+    final now = DateTime.now();
+    final diff = now.difference(dateTime);
+
+    if (diff.inMinutes < 60) {
+      return '${diff.inMinutes} dakika önce';
+    } else if (diff.inHours < 24) {
+      return '${diff.inHours} saat önce';
+    } else {
+      return '${dateTime.day}/${dateTime.month} ${dateTime.hour}:${dateTime.minute.toString().padLeft(2, '0')}';
+    }
   }
 
   /// HR bağlantı durumunu kontrol et

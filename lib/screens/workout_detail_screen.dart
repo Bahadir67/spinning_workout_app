@@ -972,7 +972,7 @@ class _WorkoutDetailScreenState extends State<WorkoutDetailScreen> {
             ),
           ),
 
-          // Hedef power ve HR
+          // Hedef power ve HR - Kompakt düzen
           Expanded(
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
@@ -981,39 +981,43 @@ class _WorkoutDetailScreenState extends State<WorkoutDetailScreen> {
                 // HR Değeri
                 Row(
                   mainAxisAlignment: MainAxisAlignment.end,
+                  mainAxisSize: MainAxisSize.min,
                   children: [
                     Icon(
                       Icons.favorite,
-                      size: 14,
+                      size: 12,
                       color: _isHRConnected ? Colors.red : Colors.grey,
                     ),
                     const SizedBox(width: 4),
                     Text(
-                      _currentHR > 0 ? '$_currentHR bpm' : '-- bpm',
+                      _currentHR > 0 ? '$_currentHR' : '--',
                       style: TextStyle(
-                        fontSize: 16,
+                        fontSize: 14,
                         fontWeight: FontWeight.bold,
                         color: _isHRConnected ? Colors.red : Colors.grey,
                       ),
                     ),
                   ],
                 ),
-                const SizedBox(height: 8),
+                const SizedBox(height: 6),
                 const Divider(height: 1, color: Colors.grey),
-                const SizedBox(height: 8),
+                const SizedBox(height: 6),
                 // Hedef Power
                 Text(
                   'HEDEF',
-                  style: TextStyle(color: Colors.grey[500], fontSize: 12),
+                  style: TextStyle(color: Colors.grey[500], fontSize: 10),
                 ),
-                const SizedBox(height: 4),
+                const SizedBox(height: 2),
                 Text(
                   '${targetWatts}W',
-                  style: const TextStyle(fontSize: 28, fontWeight: FontWeight.bold, color: Colors.yellow),
+                  style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: Colors.yellow),
                 ),
+                const SizedBox(height: 2),
                 Text(
                   '${_currentTargetCadence} RPM',
-                  style: TextStyle(fontSize: 14, color: Colors.grey[400]),
+                  style: TextStyle(fontSize: 12, color: Colors.grey[400]),
+                  overflow: TextOverflow.visible,
+                  maxLines: 1,
                 ),
               ],
             ),
