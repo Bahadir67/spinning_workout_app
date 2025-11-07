@@ -203,6 +203,7 @@ class StravaService {
   }
 
   /// Upload photo to activity
+  /// Note: Strava API v3 requires 'activity_photo' as field name
   Future<bool> uploadPhotoToActivity(String activityId, List<int> photoBytes) async {
     if (!isAuthenticated) {
       throw Exception('Not authenticated');
@@ -211,10 +212,10 @@ class StravaService {
     try {
       // Save photo to temp file
       final tempDir = Directory.systemTemp;
-      final photoFile = File('${tempDir.path}/workout_graph_${DateTime.now().millisecondsSinceEpoch}.png');
+      final photoFile = File('${tempDir.path}/workout_graph_${DateTime.now().millisecondsSinceEpoch}.jpg');
       await photoFile.writeAsBytes(photoBytes);
 
-      // Create multipart request
+      // Create multipart request - Strava uses activity_photo field name
       final request = http.MultipartRequest(
         'POST',
         Uri.parse('$API_URL/activities/$activityId/photos'),
@@ -222,21 +223,31 @@ class StravaService {
 
       request.headers['Authorization'] = 'Bearer $_accessToken';
 
-      // Add photo file
+      // Add photo file with correct field name
       request.files.add(await http.MultipartFile.fromPath(
-        'file',
+        'activity_photo',  // Strava requires this field name
         photoFile.path,
-        filename: 'workout_graph.png',
+        filename: 'workout_graph.jpg',
       ));
+
+      print('Uploading photo to activity $activityId...');
 
       // Send request
       final streamedResponse = await request.send();
       final response = await http.Response.fromStream(streamedResponse);
 
+      print('Photo upload response: ${response.statusCode}');
+      print('Photo upload body: ${response.body}');
+
       // Clean up temp file
-      await photoFile.delete();
+      try {
+        await photoFile.delete();
+      } catch (e) {
+        print('Failed to delete temp file: $e');
+      }
 
       if (response.statusCode == 201 || response.statusCode == 200) {
+        print('Photo uploaded successfully!');
         return true;
       } else {
         print('Photo upload failed: ${response.statusCode} - ${response.body}');

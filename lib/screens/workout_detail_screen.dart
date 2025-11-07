@@ -526,7 +526,8 @@ class _WorkoutDetailScreenState extends State<WorkoutDetailScreen> {
     // Kaydedilmiş durumu temizle
     await _clearSavedState();
 
-    if (_hrHistory.isEmpty || _startTime == null) {
+    // StartTime yoksa workout hiç başlamamış demektir
+    if (_startTime == null) {
       Navigator.pop(context);
       return;
     }
@@ -539,16 +540,18 @@ class _WorkoutDetailScreenState extends State<WorkoutDetailScreen> {
       print('Screenshot capture error: $e');
     }
 
-    // Activity data oluştur
+    // Activity data oluştur (HR history boş olsa bile)
     final activityData = _createActivityData(graphScreenshot: graphScreenshot);
 
     // Özet ekranına git
-    Navigator.pushReplacement(
-      context,
-      MaterialPageRoute(
-        builder: (context) => WorkoutSummaryScreen(activity: activityData),
-      ),
-    );
+    if (mounted) {
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(
+          builder: (context) => WorkoutSummaryScreen(activity: activityData),
+        ),
+      );
+    }
   }
 
   // Activity data oluştur
