@@ -45,6 +45,7 @@ dependencies:
   # Screen
   wakelock_plus: ^1.2.0                # Keep screen awake during workout
   screenshot: ^3.0.0                   # Capture widget screenshots
+  gal: ^2.3.0                          # Save images to gallery
 
 dev_dependencies:
   flutter_test:

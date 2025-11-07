@@ -636,7 +636,53 @@ class _WorkoutDetailScreenState extends State<WorkoutDetailScreen> {
       intensityFactor: intensityFactor,
       kilojoules: kilojoules,
       graphScreenshot: graphScreenshot,
+      plannedPowerData: _generatePlannedPowerData(),
+      plannedDurationSeconds: widget.workout.durationSeconds,
     );
+  }
+
+  /// Generate planned power data from workout segments
+  List<PowerDataPoint> _generatePlannedPowerData() {
+    List<PowerDataPoint> planned = [];
+    int timestamp = 0;
+
+    for (var segment in widget.workout.segments) {
+      // Handle interval segments with repeats
+      if (segment.type == SegmentType.interval && segment.repeatCount != null) {
+        for (int rep = 0; rep < segment.repeatCount!; rep++) {
+          // On phase
+          double onPowerWatts = (segment.onPower ?? segment.powerHigh) * widget.workout.ftp;
+          planned.add(PowerDataPoint(timestamp, onPowerWatts));
+          timestamp += segment.onDuration!;
+          planned.add(PowerDataPoint(timestamp, onPowerWatts));
+
+          // Off phase
+          double offPowerWatts = (segment.offPower ?? segment.powerLow) * widget.workout.ftp;
+          planned.add(PowerDataPoint(timestamp, offPowerWatts));
+          timestamp += segment.offDuration!;
+          planned.add(PowerDataPoint(timestamp, offPowerWatts));
+        }
+      } else {
+        // Regular segment (steady state or ramp)
+        if (segment.powerLow == segment.powerHigh) {
+          // Steady state segment
+          double powerWatts = segment.powerLow * widget.workout.ftp;
+          planned.add(PowerDataPoint(timestamp, powerWatts));
+          timestamp += segment.durationSeconds;
+          planned.add(PowerDataPoint(timestamp, powerWatts));
+        } else {
+          // Ramp segment - add points at start and end
+          double startPowerWatts = segment.powerLow * widget.workout.ftp;
+          double endPowerWatts = segment.powerHigh * widget.workout.ftp;
+
+          planned.add(PowerDataPoint(timestamp, startPowerWatts));
+          timestamp += segment.durationSeconds;
+          planned.add(PowerDataPoint(timestamp, endPowerWatts));
+        }
+      }
+    }
+
+    return planned;
   }
 
   @override
@@ -1319,27 +1365,108 @@ class _WorkoutDetailScreenState extends State<WorkoutDetailScreen> {
       final avgPowerPercent = (segment.powerLow + segment.powerHigh) / 2;
       final color = _getPowerZoneColor(avgPowerPercent);
 
-      // Her segment için spots
-      List<FlSpot> segmentSpots = [
-        FlSpot(currentTime.toDouble(), startPowerWatts),
-        FlSpot((currentTime + segment.durationSeconds).toDouble(), endPowerWatts),
-      ];
+      // Segment başlangıç ve bitiş zamanları
+      final segmentStart = currentTime;
+      final segmentEnd = currentTime + segment.durationSeconds;
 
-      bars.add(
-        LineChartBarData(
-          spots: segmentSpots,
-          isCurved: false,
-          color: Colors.transparent,
-          barWidth: 0,
-          dotData: FlDotData(show: false),
-          belowBarData: BarAreaData(
-            show: true,
-            color: color.withOpacity(0.7),
-            cutOffY: 0,
-            applyCutOffY: true,
+      // Bu segment tamamlanmış mı, kısmi mi, yoksa hiç yapılmamış mı?
+      final isFullyCompleted = _elapsedSeconds >= segmentEnd;
+      final isPartiallyCompleted = _elapsedSeconds > segmentStart && _elapsedSeconds < segmentEnd;
+      final isNotStarted = _elapsedSeconds <= segmentStart;
+
+      if (isFullyCompleted) {
+        // Tamamlanmış segment - normal renk
+        List<FlSpot> segmentSpots = [
+          FlSpot(segmentStart.toDouble(), startPowerWatts),
+          FlSpot(segmentEnd.toDouble(), endPowerWatts),
+        ];
+
+        bars.add(
+          LineChartBarData(
+            spots: segmentSpots,
+            isCurved: false,
+            color: Colors.transparent,
+            barWidth: 0,
+            dotData: FlDotData(show: false),
+            belowBarData: BarAreaData(
+              show: true,
+              color: color.withOpacity(0.7),
+              cutOffY: 0,
+              applyCutOffY: true,
+            ),
           ),
-        ),
-      );
+        );
+      } else if (isPartiallyCompleted) {
+        // Segment kısmen tamamlanmış - ikiye böl
+        // Tamamlanan kısım (normal renk)
+        final completedProgress = (_elapsedSeconds - segmentStart) / segment.durationSeconds;
+        final currentPowerWatts = startPowerWatts + (endPowerWatts - startPowerWatts) * completedProgress;
+
+        List<FlSpot> completedSpots = [
+          FlSpot(segmentStart.toDouble(), startPowerWatts),
+          FlSpot(_elapsedSeconds.toDouble(), currentPowerWatts),
+        ];
+
+        bars.add(
+          LineChartBarData(
+            spots: completedSpots,
+            isCurved: false,
+            color: Colors.transparent,
+            barWidth: 0,
+            dotData: FlDotData(show: false),
+            belowBarData: BarAreaData(
+              show: true,
+              color: color.withOpacity(0.7),
+              cutOffY: 0,
+              applyCutOffY: true,
+            ),
+          ),
+        );
+
+        // Tamamlanmayan kısım (ghost - soluk renk)
+        List<FlSpot> ghostSpots = [
+          FlSpot(_elapsedSeconds.toDouble(), currentPowerWatts),
+          FlSpot(segmentEnd.toDouble(), endPowerWatts),
+        ];
+
+        bars.add(
+          LineChartBarData(
+            spots: ghostSpots,
+            isCurved: false,
+            color: Colors.transparent,
+            barWidth: 0,
+            dotData: FlDotData(show: false),
+            belowBarData: BarAreaData(
+              show: true,
+              color: color.withOpacity(0.25), // Ghost opacity
+              cutOffY: 0,
+              applyCutOffY: true,
+            ),
+          ),
+        );
+      } else if (isNotStarted) {
+        // Hiç başlanmamış segment - tamamı ghost
+        List<FlSpot> segmentSpots = [
+          FlSpot(segmentStart.toDouble(), startPowerWatts),
+          FlSpot(segmentEnd.toDouble(), endPowerWatts),
+        ];
+
+        bars.add(
+          LineChartBarData(
+            spots: segmentSpots,
+            isCurved: false,
+            color: Colors.transparent,
+            barWidth: 0,
+            dotData: FlDotData(show: false),
+            belowBarData: BarAreaData(
+              show: true,
+              color: color.withOpacity(0.25), // Ghost opacity
+              cutOffY: 0,
+              applyCutOffY: true,
+            ),
+          ),
+        );
+      }
 
       currentTime += segment.durationSeconds;
     }

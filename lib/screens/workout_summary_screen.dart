@@ -1,5 +1,7 @@
+import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:gal/gal.dart';
 import '../models/activity_data.dart';
 import '../services/strava_service.dart';
 import '../services/workout_history_service.dart';
@@ -83,27 +85,28 @@ class _WorkoutSummaryScreenState extends State<WorkoutSummaryScreen> {
       try {
         final activityId = await _stravaService.uploadActivity(widget.activity);
 
-        // Upload screenshot if available
-        // Note: uploadActivity already waits for activity to be ready via _waitForUpload()
+        // Save screenshot to gallery if available
+        // Note: Strava API doesn't support photo upload for public apps
+        // User can manually upload the saved photo from gallery
+        String? savedImagePath;
         if (widget.activity.graphScreenshot != null) {
           try {
-            print('Uploading photo to activity $activityId...');
-            await _stravaService.uploadPhotoToActivity(
-              activityId,
-              widget.activity.graphScreenshot!,
-            );
-          } catch (photoError) {
-            print('Photo upload warning: $photoError');
-            // Don't fail the whole process if photo upload fails
+            savedImagePath = await _saveScreenshotToGallery(widget.activity.graphScreenshot!);
+          } catch (saveError) {
+            print('Screenshot save warning: $saveError');
           }
         }
 
         if (mounted) {
+          final message = savedImagePath != null
+              ? 'Strava\'ya başarıyla yüklendi! (ID: $activityId)\n\nGrafik galeriye kaydedildi.'
+              : 'Strava\'ya başarıyla yüklendi! (ID: $activityId)';
+
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: Text('Strava\'ya başarıyla yüklendi! (ID: $activityId)'),
+              content: Text(message),
               backgroundColor: Colors.green,
-              duration: const Duration(seconds: 5),
+              duration: const Duration(seconds: 6),
             ),
           );
         }
@@ -136,6 +139,36 @@ class _WorkoutSummaryScreenState extends State<WorkoutSummaryScreen> {
           _isUploading = false;
         });
       }
+    }
+  }
+
+  /// Save screenshot to gallery
+  Future<String?> _saveScreenshotToGallery(List<int> imageBytes) async {
+    try {
+      // Check if gallery access is granted
+      final hasAccess = await Gal.hasAccess();
+      if (!hasAccess) {
+        // Request access
+        final granted = await Gal.requestAccess();
+        if (!granted) {
+          throw Exception('Gallery access denied');
+        }
+      }
+
+      // Save to gallery with timestamp
+      final timestamp = DateTime.now().millisecondsSinceEpoch;
+      final fileName = 'spinning_workout_$timestamp.png';
+
+      await Gal.putImageBytes(
+        Uint8List.fromList(imageBytes),
+        album: 'Spinning Workouts',
+      );
+
+      print('Image saved to gallery: $fileName');
+      return fileName;
+    } catch (e) {
+      print('Error saving to gallery: $e');
+      rethrow;
     }
   }
 

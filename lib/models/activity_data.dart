@@ -33,6 +33,10 @@ class ActivityData {
   // Graph screenshot (optional)
   final Uint8List? graphScreenshot;
 
+  // Planned workout data (for showing incomplete workouts)
+  final List<PowerDataPoint>? plannedPowerData;
+  final int? plannedDurationSeconds;
+
   ActivityData({
     required this.workoutName,
     required this.startTime,
@@ -53,6 +57,8 @@ class ActivityData {
     required this.intensityFactor,
     required this.kilojoules,
     this.graphScreenshot,
+    this.plannedPowerData,
+    this.plannedDurationSeconds,
   });
 
   // Format duration as HH:MM:SS
@@ -88,6 +94,8 @@ class ActivityData {
     'intensityFactor': intensityFactor,
     'kilojoules': kilojoules,
     'graphScreenshot': graphScreenshot != null ? base64Encode(graphScreenshot!) : null,
+    'plannedPowerData': plannedPowerData?.map((d) => d.toJson()).toList(),
+    'plannedDurationSeconds': plannedDurationSeconds,
   };
 
   factory ActivityData.fromJson(Map<String, dynamic> json) {
@@ -119,6 +127,12 @@ class ActivityData {
       graphScreenshot: json['graphScreenshot'] != null
           ? base64Decode(json['graphScreenshot'])
           : null,
+      plannedPowerData: json['plannedPowerData'] != null
+          ? (json['plannedPowerData'] as List)
+              .map((d) => PowerDataPoint(d['timestamp'], d['watts'].toDouble()))
+              .toList()
+          : null,
+      plannedDurationSeconds: json['plannedDurationSeconds'],
     );
   }
 }
