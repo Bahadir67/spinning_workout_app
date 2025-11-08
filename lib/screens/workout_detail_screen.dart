@@ -55,6 +55,7 @@ class _WorkoutDetailScreenState extends State<WorkoutDetailScreen> {
 
   // Audio player için beep sesi
   final AudioPlayer _audioPlayer = AudioPlayer();
+  int _lastBeepSecond = -1; // Son beep çalınan saniye
 
   // Slide menu için
   bool _isMenuVisible = false;
@@ -1611,29 +1612,24 @@ class _WorkoutDetailScreenState extends State<WorkoutDetailScreen> {
     );
   }
 
-  // Segment countdown beep (son 5 saniye farklı tonlarda)
+  // Segment countdown beep (son 5 saniye kala bir kez çal)
   void _playSegmentCountdownBeep() async {
-    // Son 5 saniyede beep çal (TTS değil, gerçek beep sesi)
-    if (_currentSegmentRemainingSeconds >= 1 && _currentSegmentRemainingSeconds <= 5) {
-      // Her saniye için farklı playback rate = farklı ton
-      final playbackRateMap = {
-        5: 0.7,  // En düşük ton (yavaş)
-        4: 0.85,
-        3: 1.0,  // Normal
-        2: 1.15,
-        1: 1.3,  // En yüksek ton (hızlı)
-      };
-
-      final playbackRate = playbackRateMap[_currentSegmentRemainingSeconds] ?? 1.0;
+    // Sadece 5. saniyede (segment bitişine 5 saniye kala) BİR KEZ çal
+    if (_currentSegmentRemainingSeconds == 5 && _lastBeepSecond != 5) {
+      _lastBeepSecond = 5;
 
       try {
         await _audioPlayer.stop();
-        await _audioPlayer.setPlaybackRate(playbackRate);
+        await _audioPlayer.setPlaybackRate(1.0); // Normal hız
         await _audioPlayer.setVolume(1.0);
         await _audioPlayer.play(AssetSource('sounds/beep.mp3'));
+        // Ses 3.52 saniye sürer, doğal olarak biter (tekrar başlamaz)
       } catch (e) {
         print('Beep sound play error: $e');
       }
+    } else if (_currentSegmentRemainingSeconds > 5) {
+      // 5 saniyeden uzaksa, beep flag'ini sıfırla (sonraki segment için)
+      _lastBeepSecond = -1;
     }
   }
 
