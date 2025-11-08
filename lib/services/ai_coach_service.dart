@@ -80,10 +80,10 @@ class AICoachService {
     // Kapalıysa mesaj üretme
     if (_mode == CoachMode.off) return null;
 
-    // Çok sık mesaj gönderme kontrolü
+    // Çok sık mesaj gönderme kontrolü (forceType varsa veya ilk mesajsa geç)
     if (forceType == null && _lastMessageTime != null) {
       final timeSinceLastMessage = DateTime.now().difference(_lastMessageTime!);
-      if (timeSinceLastMessage.inMinutes < _messageFrequency) {
+      if (timeSinceLastMessage.inSeconds < (_messageFrequency * 60)) {
         return null;
       }
     }

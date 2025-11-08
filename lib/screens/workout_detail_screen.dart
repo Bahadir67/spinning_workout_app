@@ -562,6 +562,16 @@ class _WorkoutDetailScreenState extends State<WorkoutDetailScreen> {
 
     if (currentSegment == null) return;
 
+    // Segment değişimi kontrolü - force mesaj gönder
+    CoachMessageType? forceType;
+    if (segmentElapsed == 0) {
+      // Segment başlangıcı
+      forceType = CoachMessageType.segmentStart;
+    } else if (segmentElapsed == currentSegment.durationSeconds - 30 && currentSegment.durationSeconds > 40) {
+      // Segment bitişi (30 saniye kala, eğer segment 40 saniyeden uzunsa)
+      forceType = CoachMessageType.segmentEnd;
+    }
+
     // Coach context oluştur
     final coachContext = CoachContext(
       currentHeartRate: _currentHR > 0 ? _currentHR : null,
@@ -581,9 +591,12 @@ class _WorkoutDetailScreenState extends State<WorkoutDetailScreen> {
       ftp: widget.workout.ftp,
     );
 
-    // Mesaj üret
+    // Mesaj üret (forceType varsa force edilir)
     try {
-      final message = await _coachService.generateMessage(context: coachContext);
+      final message = await _coachService.generateMessage(
+        context: coachContext,
+        forceType: forceType,
+      );
       if (message != null && mounted) {
         setState(() {
           _currentCoachMessage = message;
