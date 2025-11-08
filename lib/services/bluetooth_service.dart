@@ -38,6 +38,12 @@ class BluetoothService {
   bool get isPowerConnected => _powerDevice != null;
   bool get isCadenceConnected => _cadenceDevice != null;
 
+  // Generic isConnected (for backward compatibility - checks HR)
+  bool get isConnected => isHRConnected;
+
+  // Generic connectedDeviceName (for backward compatibility - returns HR device name)
+  String? get connectedDeviceName => hrDeviceName;
+
   String? get hrDeviceName => _hrDevice?.platformName;
   String? get powerDeviceName => _powerDevice?.platformName;
   String? get cadenceDeviceName => _cadenceDevice?.platformName;
