@@ -563,7 +563,7 @@ class _WorkoutDetailScreenState extends State<WorkoutDetailScreen> {
     if (currentSegment == null) return;
 
     // Coach context oluştur
-    final context = CoachContext(
+    final coachContext = CoachContext(
       currentHeartRate: _currentHR > 0 ? _currentHR : null,
       averageHeartRate: _hrHistory.isNotEmpty
           ? _hrHistory.map((h) => h.bpm).reduce((a, b) => a + b) ~/ _hrHistory.length
@@ -583,7 +583,7 @@ class _WorkoutDetailScreenState extends State<WorkoutDetailScreen> {
 
     // Mesaj üret
     try {
-      final message = await _coachService.generateMessage(context: context);
+      final message = await _coachService.generateMessage(context: coachContext);
       if (message != null && mounted) {
         setState(() {
           _currentCoachMessage = message;
