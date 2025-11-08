@@ -194,3 +194,11 @@ class HeartRatePoint {
 
   HeartRatePoint(this.seconds, this.bpm);
 }
+
+/// Power point for graphing
+class PowerPoint {
+  final int seconds;
+  final int watts;
+
+  PowerPoint(this.seconds, this.watts);
+}

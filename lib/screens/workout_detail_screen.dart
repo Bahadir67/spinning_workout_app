@@ -42,7 +42,18 @@ class _WorkoutDetailScreenState extends State<WorkoutDetailScreen> {
   StreamSubscription<int>? _hrSubscription;
   bool _isHRConnected = false;
 
-  // Power ve kadans (hedef değerler)
+  // Power verileri (Bluetooth'tan veya hedef değerler)
+  int _currentPower = 0; // Gerçek power (sensörden)
+  List<PowerPoint> _powerHistory = []; // Gerçek power history
+  StreamSubscription<int>? _powerSubscription;
+  bool _isPowerConnected = false;
+
+  // Cadence verileri (Bluetooth'tan veya hedef değerler)
+  int _currentCadence = 0; // Gerçek cadence (sensörden)
+  StreamSubscription<int>? _cadenceSubscription;
+  bool _isCadenceConnected = false;
+
+  // Target değerler (segment'ten)
   double _currentTargetPower = 0;
   int _currentTargetCadence = 0;
 
@@ -106,7 +117,7 @@ class _WorkoutDetailScreenState extends State<WorkoutDetailScreen> {
     _coachService.initialize();
   }
 
-  /// Bluetooth HR sensörünü başlat
+  /// Bluetooth sensörlerini başlat (HR, Power, Cadence)
   Future<void> _initBluetooth() async {
     // HR stream'ini dinle
     _hrSubscription = _bluetoothService.heartRateStream.listen((hr) {
@@ -116,9 +127,27 @@ class _WorkoutDetailScreenState extends State<WorkoutDetailScreen> {
       });
     });
 
-    // Bağlantı durumunu kontrol et
+    // Power stream'ini dinle
+    _powerSubscription = _bluetoothService.powerStream.listen((watts) {
+      setState(() {
+        _currentPower = watts;
+        _isPowerConnected = true;
+      });
+    });
+
+    // Cadence stream'ini dinle
+    _cadenceSubscription = _bluetoothService.cadenceStream.listen((rpm) {
+      setState(() {
+        _currentCadence = rpm;
+        _isCadenceConnected = true;
+      });
+    });
+
+    // Bağlantı durumlarını kontrol et
     setState(() {
-      _isHRConnected = _bluetoothService.isConnected;
+      _isHRConnected = _bluetoothService.isHRConnected;
+      _isPowerConnected = _bluetoothService.isPowerConnected;
+      _isCadenceConnected = _bluetoothService.isCadenceConnected;
     });
   }
 
@@ -348,6 +377,8 @@ class _WorkoutDetailScreenState extends State<WorkoutDetailScreen> {
   void dispose() {
     _timer?.cancel();
     _hrSubscription?.cancel();
+    _powerSubscription?.cancel();
+    _cadenceSubscription?.cancel();
     _audioPlayer.dispose();
     // AI Coach overlay'ini kapat
     CoachMessageManager.hide();
@@ -531,11 +562,26 @@ class _WorkoutDetailScreenState extends State<WorkoutDetailScreen> {
 
   // Veri kaydet (her saniye)
   void _recordData() {
+    if (!_isRunning) return;
+
     // HR verisini kaydet (Bluetooth'tan gelen)
-    if (_isRunning && _currentHR > 0) {
+    if (_currentHR > 0) {
       _hrHistory.add(HeartRatePoint(
         _elapsedSeconds,
         _currentHR,
+      ));
+    }
+
+    // Power verisini kaydet
+    // Sensör bağlıysa gerçek power, yoksa target power kullan
+    final powerToRecord = _isPowerConnected && _currentPower > 0
+        ? _currentPower
+        : (_currentTargetPower * widget.workout.ftp).round();
+
+    if (powerToRecord > 0) {
+      _powerHistory.add(PowerPoint(
+        _elapsedSeconds,
+        powerToRecord,
       ));
     }
   }
@@ -574,15 +620,23 @@ class _WorkoutDetailScreenState extends State<WorkoutDetailScreen> {
     }
 
     // Coach context oluştur
+    // Gerçek verileri kullan, yoksa target değerleri
+    final actualPower = _isPowerConnected && _currentPower > 0
+        ? _currentPower.toDouble()
+        : _currentTargetPower * widget.workout.ftp;
+    final actualCadence = _isCadenceConnected && _currentCadence > 0
+        ? _currentCadence
+        : _currentTargetCadence;
+
     final coachContext = CoachContext(
       currentHeartRate: _currentHR > 0 ? _currentHR : null,
       averageHeartRate: _hrHistory.isNotEmpty
           ? _hrHistory.map((h) => h.bpm).reduce((a, b) => a + b) ~/ _hrHistory.length
           : null,
       maxHeartRate: 185, // TODO: Kullanıcıdan al
-      currentPower: _currentTargetPower,
-      targetPower: _currentTargetPower,
-      currentCadence: 85, // TODO: Gerçek kadans sensöründen al
+      currentPower: actualPower,
+      targetPower: _currentTargetPower * widget.workout.ftp,
+      currentCadence: actualCadence,
       targetCadence: _currentTargetCadence,
       segmentType: currentSegment.type.toString().split('.').last,
       segmentName: currentSegment.name ?? currentSegment.type.toString(),
