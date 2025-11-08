@@ -33,14 +33,31 @@ jobs:
         run: flutter pub get
 
       - name: Analyze code
-        run: flutter analyze
-        continue-on-error: true
+        run: |
+          echo "=== ANALYZING CODE ==="
+          flutter analyze 2>&1 | tee analyze.log
+          if grep -q "error •" analyze.log; then
+            echo "❌ ERRORS FOUND:"
+            grep "error •" analyze.log
+            exit 1
+          else
+            echo "✅ No errors found"
+          fi
 
       - name: Clean build
         run: flutter clean
 
       - name: Build APK
-        run: flutter build apk --release --verbose
+        run: |
+          echo "=== BUILDING APK ==="
+          flutter build apk --release 2>&1 | tee build.log
+          if [ $? -eq 0 ]; then
+            echo "✅ BUILD SUCCESSFUL"
+          else
+            echo "❌ BUILD FAILED - Showing errors:"
+            grep -i "error\|exception\|failed" build.log | tail -50
+            exit 1
+          fi
 
       - name: Get version from pubspec
         id: version
