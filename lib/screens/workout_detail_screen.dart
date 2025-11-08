@@ -1473,6 +1473,8 @@ class _WorkoutDetailScreenState extends State<WorkoutDetailScreen> {
               ),
               lineBarsData: [
                 ..._createColoredSegmentBars(),
+                // Power line overlay (TrainerRoad style - real-time power data)
+                if (_powerHistory.isNotEmpty) _createPowerLine(),
                 // HR line overlay
                 if (_hrHistory.isNotEmpty) _createHRLine(maxPower * 1.2),
               ],
@@ -1646,6 +1648,24 @@ class _WorkoutDetailScreenState extends State<WorkoutDetailScreen> {
     if (powerPercent < 0.90) return Colors.green;
     if (powerPercent < 1.05) return Colors.yellow;
     return Colors.orange;
+  }
+
+  // Power çizgisini oluştur (overlay olarak - TrainerRoad style)
+  LineChartBarData _createPowerLine() {
+    // Power değerlerini direkt watt cinsinden kullan
+    List<FlSpot> powerSpots = _powerHistory.map((powerPoint) {
+      return FlSpot(powerPoint.seconds.toDouble(), powerPoint.watts.toDouble());
+    }).toList();
+
+    return LineChartBarData(
+      spots: powerSpots,
+      isCurved: true,
+      curveSmoothness: 0.3,
+      color: Colors.cyan.withOpacity(0.9),
+      barWidth: 3,
+      dotData: FlDotData(show: false),
+      belowBarData: BarAreaData(show: false),
+    );
   }
 
   // HR çizgisini oluştur (overlay olarak power grafiği üzerinde)
