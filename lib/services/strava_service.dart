@@ -163,8 +163,11 @@ class StravaService {
         final data = jsonDecode(response.body);
         final uploadId = data['id'];
 
-        // Wait for processing (optional)
-        await _waitForUpload(uploadId);
+        print('Upload successful! Upload ID: $uploadId');
+        print('Waiting for Strava to process the activity...');
+
+        // Wait for processing and get activity ID
+        final activityId = await _waitForUpload(uploadId);
 
         // Clean up FIT file (non-blocking, just log errors)
         try {
@@ -177,7 +180,10 @@ class StravaService {
           // Don't throw - upload was successful
         }
 
-        return data['activity_id']?.toString() ?? uploadId.toString();
+        // Return activity ID or upload ID as fallback
+        final finalActivityId = activityId ?? data['activity_id']?.toString() ?? uploadId.toString();
+        print('Final activity ID: $finalActivityId');
+        return finalActivityId;
       } else {
         throw Exception('Upload failed: ${response.body}');
       }
@@ -186,8 +192,8 @@ class StravaService {
     }
   }
 
-  /// Wait for upload to be processed
-  Future<void> _waitForUpload(int uploadId) async {
+  /// Wait for upload to be processed and return activity ID
+  Future<String?> _waitForUpload(int uploadId) async {
     for (var i = 0; i < 30; i++) {
       // Try for 30 seconds
       await Future.delayed(const Duration(seconds: 1));
@@ -201,24 +207,35 @@ class StravaService {
         if (response.statusCode == 200) {
           final data = jsonDecode(response.body);
 
-          // Check if upload is complete and no errors
+          // Check if there's an error
+          if (data['error'] != null) {
+            print('Upload error from Strava: ${data['error']}');
+            return null;
+          }
+
+          // Check if upload is complete and has activity_id
           if (data['activity_id'] != null) {
-            // Additional check: make sure there's no error
-            if (data['error'] == null && data['status'] != 'Your activity is still being processed.') {
-              print('Upload complete: Activity ID ${data['activity_id']} is ready');
-              return; // Upload complete and ready
-            } else {
-              print('Upload status: ${data['status']}');
+            final activityId = data['activity_id'].toString();
+            final status = data['status'] ?? '';
+
+            print('Upload status: $status');
+            print('Activity ID found: $activityId');
+
+            // If status is not "processing", consider it ready
+            if (status != 'Your activity is still being processed.') {
+              print('Upload complete! Activity ID: $activityId is ready');
+              return activityId;
             }
           }
         }
       } catch (e) {
-        print('Waiting for upload: $e');
+        print('Waiting for upload (attempt ${i + 1}/30): $e');
         // Continue waiting
       }
     }
 
-    print('Upload wait timeout - proceeding anyway');
+    print('Upload wait timeout - Strava is still processing');
+    return null; // Timeout, activity may still be processing
   }
 
   /// Upload photo to activity

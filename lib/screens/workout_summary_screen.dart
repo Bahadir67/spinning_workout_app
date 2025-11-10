@@ -98,15 +98,28 @@ class _WorkoutSummaryScreenState extends State<WorkoutSummaryScreen> {
         }
 
         if (mounted) {
+          final activityUrl = 'https://www.strava.com/activities/$activityId';
+          print('Strava activity uploaded successfully: $activityUrl');
+
           final message = savedImagePath != null
-              ? 'Strava\'ya başarıyla yüklendi! (ID: $activityId)\n\nGrafik galeriye kaydedildi.'
-              : 'Strava\'ya başarıyla yüklendi! (ID: $activityId)';
+              ? 'Strava\'ya başarıyla yüklendi!\n\nActivity ID: $activityId\nGrafik galeriye kaydedildi.\n\nStrava\'da görmek için:\n$activityUrl'
+              : 'Strava\'ya başarıyla yüklendi!\n\nActivity ID: $activityId\n\nStrava\'da görmek için:\n$activityUrl';
 
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
               content: Text(message),
               backgroundColor: Colors.green,
-              duration: const Duration(seconds: 6),
+              duration: const Duration(seconds: 10),
+              action: SnackBarAction(
+                label: 'STRAVA\'DA GÖR',
+                textColor: Colors.white,
+                onPressed: () async {
+                  final uri = Uri.parse(activityUrl);
+                  if (await canLaunchUrl(uri)) {
+                    await launchUrl(uri, mode: LaunchMode.externalApplication);
+                  }
+                },
+              ),
             ),
           );
         }
