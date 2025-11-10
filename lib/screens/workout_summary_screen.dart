@@ -81,6 +81,14 @@ class _WorkoutSummaryScreenState extends State<WorkoutSummaryScreen> {
         }
       }
 
+      // Get athlete info to verify authentication
+      try {
+        final athlete = await _stravaService.getAthlete();
+        print('Uploading to Strava account: ${athlete['firstname']} ${athlete['lastname']} (ID: ${athlete['id']})');
+      } catch (e) {
+        print('Warning: Could not get athlete info: $e');
+      }
+
       // Upload activity
       try {
         final activityId = await _stravaService.uploadActivity(widget.activity);

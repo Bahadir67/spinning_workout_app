@@ -34,8 +34,11 @@ class StravaService {
         'redirect_uri': REDIRECT_URI,
         'response_type': 'code',
         'scope': 'activity:write,activity:read_all',
-        'approval_prompt': 'auto',
+        'approval_prompt': 'force', // Force to ensure we get the right scope
       });
+
+      print('Auth URL: $authUrl');
+      print('Requested scope: activity:write,activity:read_all');
 
       // Launch browser
       if (await canLaunchUrl(authUrl)) {
@@ -52,6 +55,7 @@ class StravaService {
   /// Handle OAuth callback (call this from deep link handler)
   Future<bool> handleAuthCallback(String code) async {
     try {
+      print('Exchanging code for token...');
       final response = await http.post(
         Uri.parse(TOKEN_URL),
         body: {
@@ -62,19 +66,30 @@ class StravaService {
         },
       );
 
+      print('Token response status: ${response.statusCode}');
+
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
         _accessToken = data['access_token'];
         _tokenExpiry = DateTime.now().add(Duration(seconds: data['expires_in']));
+
+        // Log athlete info and scope
+        print('=== STRAVA AUTH SUCCESS ===');
+        print('Athlete: ${data['athlete']?['firstname']} ${data['athlete']?['lastname']} (ID: ${data['athlete']?['id']})');
+        print('Scope granted: ${data['scope']}');
+        print('Token expires in: ${data['expires_in']} seconds');
+        print('==========================');
 
         // Save tokens
         await _saveTokens(data['access_token'], data['refresh_token']);
 
         return true;
       } else {
+        print('Token exchange failed: ${response.body}');
         throw Exception('Token exchange failed: ${response.body}');
       }
     } catch (e) {
+      print('Callback handling error: $e');
       throw Exception('Callback handling error: $e');
     }
   }
@@ -127,9 +142,24 @@ class StravaService {
     }
 
     try {
+      print('=== STARTING STRAVA UPLOAD ===');
+
       // Generate FIT file
+      print('Generating FIT file...');
       final fitFilePath = await FitFileGenerator.generateFitFile(activity);
       final fitFile = File(fitFilePath);
+      final fitFileSize = await fitFile.length();
+      print('FIT file created: $fitFilePath ($fitFileSize bytes)');
+
+      // Log activity details
+      print('Activity details:');
+      print('  - Name: ${activity.workoutName}');
+      print('  - Duration: ${activity.durationSeconds}s');
+      print('  - Start: ${activity.startTime}');
+      print('  - HR data points: ${activity.heartRateData.length}');
+      print('  - Power data points: ${activity.powerData.length}');
+      print('  - Avg HR: ${activity.avgHeartRate} bpm');
+      print('  - Avg Power: ${activity.avgPower.round()}W');
 
       // Create multipart request
       final request = http.MultipartRequest(
@@ -149,15 +179,25 @@ class StravaService {
       request.fields['trainer'] = '1'; // Mark as trainer/indoor
       request.fields['activity_type'] = 'VirtualRide';
 
+      print('Upload fields:');
+      print('  - data_type: fit');
+      print('  - trainer: 1');
+      print('  - activity_type: VirtualRide');
+
       // Add FIT file
       request.files.add(await http.MultipartFile.fromPath(
         'file',
         fitFilePath,
       ));
 
+      print('Sending request to Strava...');
+
       // Send request
       final streamedResponse = await request.send();
       final response = await http.Response.fromStream(streamedResponse);
+
+      print('Response status: ${response.statusCode}');
+      print('Response body: ${response.body}');
 
       if (response.statusCode == 201) {
         final data = jsonDecode(response.body);
