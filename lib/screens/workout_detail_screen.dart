@@ -566,6 +566,8 @@ class _WorkoutDetailScreenState extends State<WorkoutDetailScreen> {
         if (segmentIndex != _currentSegmentIndex) {
           _currentSegmentIndex = segmentIndex;
           _announceSegmentStart(segment);
+          // AI Coach'a segment değişimini bildir (30 saniye sessiz olsun)
+          _coachService.notifySegmentChange();
         } else {
           // Segment içinde - her watt değişimini bildir
           _announceTargetChange();
@@ -695,19 +697,6 @@ class _WorkoutDetailScreenState extends State<WorkoutDetailScreen> {
 
     if (currentSegment == null) return;
 
-    // Segment değişimi kontrolü - force mesaj gönder
-    CoachMessageType? forceType;
-    bool isSegmentMessage = false;
-    if (segmentElapsed == 0) {
-      // Segment başlangıcı
-      forceType = CoachMessageType.segmentStart;
-      isSegmentMessage = true;
-    } else if (segmentElapsed == currentSegment.durationSeconds - 30 && currentSegment.durationSeconds > 40) {
-      // Segment bitişi (30 saniye kala, eğer segment 40 saniyeden uzunsa)
-      forceType = CoachMessageType.segmentEnd;
-      isSegmentMessage = true;
-    }
-
     // Coach context oluştur
     // Gerçek verileri kullan, yoksa target değerleri
     final actualPower = _isPowerConnected && _currentPower > 0
@@ -750,38 +739,13 @@ class _WorkoutDetailScreenState extends State<WorkoutDetailScreen> {
       powerHistory: _powerHistoryForNP,  // Son 30 saniye için NP
     );
 
-    // Mesaj üret
-    // ÖNEMLİ: Segment mesajı varsa SADECE onu gönder, başka mesaj üretme
-    if (isSegmentMessage) {
-      // Sadece segment mesajını gönder
-      try {
-        final message = await _coachService.generateMessage(
-          context: coachContext,
-          metrics: workoutMetrics,
-          workoutElapsedSeconds: _elapsedSeconds,
-          forceType: forceType,  // segmentStart veya segmentEnd
-        );
-
-        if (message != null && mounted) {
-          setState(() {
-            _currentCoachMessage = message;
-          });
-          CoachMessageManager.enqueue(context, message);
-        }
-      } catch (e) {
-        print('Segment mesaj hatası: $e');
-      }
-      // Segment mesajı gönderildi, başka mesaj üretme!
-      return;
-    }
-
-    // Normal AI mesajları (segment mesajı yoksa)
+    // Sadece normal AI mesajları (segment mesajları TTS tarafından yönetiliyor)
     try {
       final message = await _coachService.generateMessage(
         context: coachContext,
         metrics: workoutMetrics,
         workoutElapsedSeconds: _elapsedSeconds,
-        forceType: null,  // Normal AI mesajı
+        forceType: null,  // Segment force type yok, sadece normal AI mesajları
       );
 
       if (message != null && mounted) {
@@ -791,7 +755,7 @@ class _WorkoutDetailScreenState extends State<WorkoutDetailScreen> {
         CoachMessageManager.enqueue(context, message);
       }
     } catch (e) {
-      print('Coach mesaj hatası: $e');
+      print('❌ AI Coach mesaj hatası: $e');
     }
   }
 

@@ -147,76 +147,53 @@ class AICoachService {
     CoachMessageType? forceType,
     MessageCategory? category,  // Yeni parametre
   }) async {
-    // Şu anda bir mesaj oluşturuluyorsa, yeni istek yapma (segment mesajları hariç)
-    if (_isGeneratingMessage &&
-        forceType != CoachMessageType.segmentStart &&
-        forceType != CoachMessageType.segmentEnd) {
+    // Şu anda bir mesaj oluşturuluyorsa, yeni istek yapma
+    if (_isGeneratingMessage) {
+      print('🔒 AI Coach: Mesaj oluşturuluyor, yeni istek engellendi');
       return null;
     }
 
-    // Kapalıysa sadece segment bilgilendirmeleri göster
+    // KURAL 1: Coach kapalıysa hiç mesaj verme
     if (_mode == CoachMode.off) {
-      // Sadece segment başlangıç/bitiş bilgilendirmeleri
-      if (forceType == CoachMessageType.segmentStart ||
-          forceType == CoachMessageType.segmentEnd) {
-        return _generateSegmentInfoMessage(context, forceType!);
-      }
-      // Diğer tüm mesajları engelle (tarihçe, güncel olaylar, motivasyon vs.)
       return null;
     }
 
-    // İlk 3 dakika (180 saniye) hiç mesaj verme
+    // KURAL 2: İlk 3 dakika (180 saniye) AI Coach tamamen sessiz (FİX SÜRE)
     if (workoutElapsedSeconds < 180) {
+      print('⏰ AI Coach: İlk 3 dakika sessiz (${workoutElapsedSeconds}s / 180s)');
       return null;
     }
 
-    // Çok sık mesaj gönderme kontrolü
-    // Segment başlangıç/bitiş mesajları her zaman gösterilir
-    if (forceType != CoachMessageType.segmentStart &&
-        forceType != CoachMessageType.segmentEnd) {
-
-      // Segment mesajından sonra en az 5 saniye bekle
-      if (_lastSegmentMessageTime != null) {
-        final timeSinceSegment = DateTime.now().difference(_lastSegmentMessageTime!);
-        if (timeSinceSegment.inSeconds < 5) {
-          print('⏰ Segment sonrası bekleme: ${timeSinceSegment.inSeconds}s < 5s');
-          return null;
-        }
+    // KURAL 3: Segment sonrası 30 saniye AI Coach sessiz
+    if (_lastSegmentMessageTime != null) {
+      final timeSinceSegment = DateTime.now().difference(_lastSegmentMessageTime!);
+      if (timeSinceSegment.inSeconds < 30) {
+        print('⏰ AI Coach: Segment sonrası bekleme (${timeSinceSegment.inSeconds}s / 30s)');
+        return null;
       }
+    }
 
-      // Son mesaj zamanı kontrolü
-      if (_lastMessageTime != null) {
-        final timeSinceLastMessage = DateTime.now().difference(_lastMessageTime!);
-        // Normal mesajlar için ayarlanan frekans kadar ara
-        if (timeSinceLastMessage.inSeconds < _messageFrequencySeconds) {
-          print('⏰ Mesaj atlandı: ${timeSinceLastMessage.inSeconds}s < ${_messageFrequencySeconds}s');
-          return null;
-        }
+    // KURAL 4: Normal mesaj frekansı kontrolü (kullanıcı ayarı)
+    if (_lastMessageTime != null) {
+      final timeSinceLastMessage = DateTime.now().difference(_lastMessageTime!);
+      if (timeSinceLastMessage.inSeconds < _messageFrequencySeconds) {
+        print('⏰ AI Coach: Frekans bekleme (${timeSinceLastMessage.inSeconds}s / ${_messageFrequencySeconds}s)');
+        return null;
       }
     }
 
     // Cache kontrolü
     final cacheKey = _generateCacheKey(context, forceType);
     if (_cache.containsKey(cacheKey)) {
-      // Segment mesajları timer'ı sıfırlamamalı
-      if (forceType != CoachMessageType.segmentStart &&
-          forceType != CoachMessageType.segmentEnd) {
-        _lastMessageTime = DateTime.now();
-      } else {
-        // Cache'ten dönen segment mesajı da segment timer'ını günceller
-        _lastSegmentMessageTime = DateTime.now();
-        print('⏰ Cache segment mesajı, 5 saniye AI mesajı engellendi');
-      }
+      _lastMessageTime = DateTime.now();
+      print('💾 AI Coach: Cache hit');
       return _cache[cacheKey];
     }
 
     CoachMessage? message;
 
-    // Lock - mesaj oluşturma başladı (segment mesajları hariç)
-    if (forceType != CoachMessageType.segmentStart &&
-        forceType != CoachMessageType.segmentEnd) {
-      _isGeneratingMessage = true;
-    }
+    // Lock - mesaj oluşturma başladı
+    _isGeneratingMessage = true;
 
     try {
       // AI modunda ve API key varsa
@@ -241,18 +218,8 @@ class AICoachService {
 
       if (message != null) {
         _cache[cacheKey] = message;
-
-        // Sadece AI mesajları ve normal mesajlar için timer'ı güncelle
-        // Segment başlangıç/bitiş mesajları timer'ı sıfırlamamalı
-        if (forceType != CoachMessageType.segmentStart &&
-            forceType != CoachMessageType.segmentEnd) {
-          _lastMessageTime = DateTime.now();
-          print('⏰ Timer güncellendi: ${_lastMessageTime!.toIso8601String()}');
-        } else {
-          // Segment mesajı gönderildi, segment timer'ını güncelle
-          _lastSegmentMessageTime = DateTime.now();
-          print('⏰ Segment mesajı gönderildi, 5 saniye AI mesajı engellendi');
-        }
+        _lastMessageTime = DateTime.now();
+        print('✅ AI Coach: Mesaj oluşturuldu, timer güncellendi');
 
         // Cache'i temizle (max 20 mesaj)
         if (_cache.length > 20) {
@@ -265,29 +232,6 @@ class AICoachService {
       // Unlock - mesaj oluşturma bitti
       _isGeneratingMessage = false;
     }
-  }
-
-  /// Sadece segment bilgilendirme mesajı (Coach kapalıyken)
-  CoachMessage _generateSegmentInfoMessage(CoachContext context, CoachMessageType type) {
-    String message;
-
-    if (type == CoachMessageType.segmentStart) {
-      final duration = (context.segmentDurationSeconds / 60).toInt();
-      message = '${context.segmentName} başlıyor! ${duration}dk, ${context.targetPower.toInt()}W';
-    } else {
-      final remaining = context.segmentDurationSeconds - context.segmentElapsedSeconds;
-      if (remaining < 30) {
-        message = 'Son ${remaining} saniye!';
-      } else {
-        message = 'Son 1 dakika!';
-      }
-    }
-
-    return CoachMessage(
-      message: message,
-      type: type,
-      category: MessageCategory.technicalFeedback,
-    );
   }
 
   /// OpenRouter API ile mesaj oluştur (kategori bazlı)
@@ -845,10 +789,17 @@ Bu workout'u kısaca analiz et ve motivasyonla açıkla.
     }
   }
 
+  /// Segment değişimini bildir (TTS anonsu yapıldığında çağrılır)
+  void notifySegmentChange() {
+    _lastSegmentMessageTime = DateTime.now();
+    print('🔔 AI Coach: Segment değişti, 30 saniye sessiz');
+  }
+
   /// Servisi sıfırla (yeni antrenman için)
   void reset() {
     _cache.clear();
     _lastMessageTime = null;
+    _lastSegmentMessageTime = null;
     _isGeneratingMessage = false;
   }
 }
