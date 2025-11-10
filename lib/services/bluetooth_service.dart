@@ -129,6 +129,18 @@ class BluetoothService {
     return allDevices['hr'] ?? [];
   }
 
+  /// Scan for Power devices only
+  Future<List<fbp.BluetoothDevice>> scanForPowerDevices() async {
+    final allDevices = await scanForAllSensors();
+    return allDevices['power'] ?? [];
+  }
+
+  /// Scan for Cadence devices only
+  Future<List<fbp.BluetoothDevice>> scanForCadenceDevices() async {
+    final allDevices = await scanForAllSensors();
+    return allDevices['cadence'] ?? [];
+  }
+
   /// Connect to HR device
   Future<bool> connectToDevice(fbp.BluetoothDevice device) async {
     return connectToHRDevice(device);

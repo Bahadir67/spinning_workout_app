@@ -10,7 +10,7 @@ import '../models/workout_state.dart';
 import '../services/workout_parser.dart';
 import '../services/bluetooth_service.dart';
 import 'workout_detail_screen.dart';
-import 'hr_connection_screen.dart';
+import 'sensor_connection_screen.dart';
 import 'workout_history_screen.dart';
 import 'coach_settings_screen.dart';
 
@@ -130,7 +130,7 @@ class _WorkoutListScreenState extends State<WorkoutListScreen> {
   Future<void> _openHRConnection() async {
     await Navigator.push(
       context,
-      MaterialPageRoute(builder: (context) => const HRConnectionScreen()),
+      MaterialPageRoute(builder: (context) => const SensorConnectionScreen()),
     );
 
     // Geri dönünce durumu her zaman güncelle

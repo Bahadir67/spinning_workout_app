@@ -9,6 +9,17 @@ enum SegmentType {
   freeRide,
 }
 
+/// Workout type based on dominant zone
+enum WorkoutType {
+  recovery,    // <55% FTP dominant
+  endurance,   // 55-75% FTP (Z2)
+  tempo,       // 76-90% FTP
+  sweetSpot,   // 88-94% FTP
+  threshold,   // 91-105% FTP
+  vo2max,      // >106% FTP
+  mixed,       // No single dominant zone
+}
+
 /// Single workout segment
 class WorkoutSegment {
   final SegmentType type;
@@ -160,6 +171,93 @@ class Workout {
   // Kilojoules
   double calculateKilojoules() {
     return getAveragePower() * durationSeconds / 1000;
+  }
+
+  /// Detect workout type based on time-weighted zone analysis
+  WorkoutType detectWorkoutType() {
+    // Calculate time spent in each zone
+    final Map<WorkoutType, int> zoneTime = {
+      WorkoutType.recovery: 0,
+      WorkoutType.endurance: 0,
+      WorkoutType.tempo: 0,
+      WorkoutType.sweetSpot: 0,
+      WorkoutType.threshold: 0,
+      WorkoutType.vo2max: 0,
+    };
+
+    for (var segment in segments) {
+      // Skip warmup/cooldown for type detection
+      if (segment.type == SegmentType.warmup ||
+          segment.type == SegmentType.cooldown) {
+        continue;
+      }
+
+      final avgPowerPercent = ((segment.powerLow + segment.powerHigh) / 2) * 100;
+      int duration = segment.durationSeconds;
+
+      // For intervals, calculate total interval time
+      if (segment.type == SegmentType.interval && segment.repeatCount != null) {
+        duration = segment.onDuration! * segment.repeatCount!;
+      }
+
+      // Classify into zones
+      if (avgPowerPercent < 55) {
+        zoneTime[WorkoutType.recovery] = zoneTime[WorkoutType.recovery]! + duration;
+      } else if (avgPowerPercent >= 88 && avgPowerPercent <= 94) {
+        // Sweet Spot is specific range
+        zoneTime[WorkoutType.sweetSpot] = zoneTime[WorkoutType.sweetSpot]! + duration;
+      } else if (avgPowerPercent >= 55 && avgPowerPercent < 76) {
+        zoneTime[WorkoutType.endurance] = zoneTime[WorkoutType.endurance]! + duration;
+      } else if (avgPowerPercent >= 76 && avgPowerPercent < 91) {
+        zoneTime[WorkoutType.tempo] = zoneTime[WorkoutType.tempo]! + duration;
+      } else if (avgPowerPercent >= 91 && avgPowerPercent <= 105) {
+        zoneTime[WorkoutType.threshold] = zoneTime[WorkoutType.threshold]! + duration;
+      } else if (avgPowerPercent > 105) {
+        zoneTime[WorkoutType.vo2max] = zoneTime[WorkoutType.vo2max]! + duration;
+      }
+    }
+
+    // Find dominant zone (>50% of working time)
+    final totalWorkTime = zoneTime.values.reduce((a, b) => a + b);
+    if (totalWorkTime == 0) return WorkoutType.recovery;
+
+    WorkoutType? dominantType;
+    int maxTime = 0;
+
+    zoneTime.forEach((type, time) {
+      if (time > maxTime) {
+        maxTime = time;
+        dominantType = type;
+      }
+    });
+
+    // Check if dominant (>50%)
+    if (maxTime > totalWorkTime * 0.5) {
+      return dominantType!;
+    }
+
+    return WorkoutType.mixed;
+  }
+
+  /// Get workout type name in Turkish
+  String getWorkoutTypeName() {
+    final type = detectWorkoutType();
+    switch (type) {
+      case WorkoutType.recovery:
+        return 'Recovery';
+      case WorkoutType.endurance:
+        return 'Endurance (Z2)';
+      case WorkoutType.tempo:
+        return 'Tempo';
+      case WorkoutType.sweetSpot:
+        return 'Sweet Spot';
+      case WorkoutType.threshold:
+        return 'Threshold';
+      case WorkoutType.vo2max:
+        return 'VO2 Max';
+      case WorkoutType.mixed:
+        return 'Mixed';
+    }
   }
 
   Map<String, dynamic> toJson() => {

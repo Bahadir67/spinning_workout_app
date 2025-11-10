@@ -14,8 +14,8 @@ class _CoachSettingsScreenState extends State<CoachSettingsScreen> {
   final TextEditingController _apiKeyController = TextEditingController();
 
   CoachMode _selectedMode = CoachMode.ruleBased;
-  String _selectedModel = 'google/gemini-flash-1.5';
-  int _messageFrequency = 3;
+  String _selectedModel = 'minimax/minimax-m2';
+  int _messageFrequencySeconds = 180; // Varsayılan 3 dakika = 180 saniye
 
   @override
   void initState() {
@@ -28,14 +28,14 @@ class _CoachSettingsScreenState extends State<CoachSettingsScreen> {
     setState(() {
       _selectedMode = _coachService.mode;
       _selectedModel = _coachService.selectedModel;
-      _messageFrequency = _coachService.messageFrequency;
+      _messageFrequencySeconds = _coachService.messageFrequencySeconds;
     });
   }
 
   Future<void> _saveSettings() async {
     await _coachService.setMode(_selectedMode);
     await _coachService.setModel(_selectedModel);
-    await _coachService.setFrequency(_messageFrequency);
+    await _coachService.setFrequencySeconds(_messageFrequencySeconds);
 
     if (_apiKeyController.text.isNotEmpty) {
       await _coachService.setApiKey(_apiKeyController.text);
@@ -46,6 +46,94 @@ class _CoachSettingsScreenState extends State<CoachSettingsScreen> {
         const SnackBar(content: Text('Ayarlar kaydedildi!')),
       );
       Navigator.pop(context);
+    }
+  }
+
+  Future<void> _testApiConnection() async {
+    // Önce geçici olarak ayarları kaydet
+    if (_apiKeyController.text.isNotEmpty) {
+      await _coachService.setApiKey(_apiKeyController.text);
+    }
+    await _coachService.setModel(_selectedModel);
+
+    if (mounted) {
+      // Loading göster
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (context) => const Center(
+          child: CircularProgressIndicator(),
+        ),
+      );
+    }
+
+    try {
+      final result = await _coachService.testApiConnection();
+
+      if (mounted) {
+        Navigator.pop(context); // Loading kapat
+
+        // Sonucu göster
+        showDialog(
+          context: context,
+          builder: (context) => AlertDialog(
+            title: Row(
+              children: [
+                Icon(
+                  result['success'] ? Icons.check_circle : Icons.error,
+                  color: result['success'] ? Colors.green : Colors.red,
+                ),
+                const SizedBox(width: 8),
+                Text(result['success'] ? 'Başarılı!' : 'Hata'),
+              ],
+            ),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(result['message']),
+                if (result['model'] != null) ...[
+                  const SizedBox(height: 8),
+                  Text('Model: ${result['model']}', style: const TextStyle(fontSize: 12)),
+                ],
+                if (result['response'] != null) ...[
+                  const SizedBox(height: 8),
+                  Text('Yanıt: "${result['response']}"', style: const TextStyle(fontSize: 12, fontStyle: FontStyle.italic)),
+                ],
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('Tamam'),
+              ),
+            ],
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        Navigator.pop(context); // Loading kapat
+        showDialog(
+          context: context,
+          builder: (context) => AlertDialog(
+            title: const Row(
+              children: [
+                Icon(Icons.error, color: Colors.red),
+                SizedBox(width: 8),
+                Text('Hata'),
+              ],
+            ),
+            content: Text('Test sırasında hata: $e'),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('Tamam'),
+              ),
+            ],
+          ),
+        );
+      }
     }
   }
 
@@ -148,17 +236,88 @@ class _CoachSettingsScreenState extends State<CoachSettingsScreen> {
                         border: OutlineInputBorder(),
                       ),
                       items: [
+                        // Önerilen Modeller
                         const DropdownMenuItem<String>(
-                          value: 'google/gemini-flash-1.5',
-                          child: Text('Gemini Flash 1.5 (Hızlı & Ucuz)'),
+                          value: 'minimax/minimax-m2',
+                          child: Text('Minimax M2 (Önerilen)'),
                         ),
                         const DropdownMenuItem<String>(
-                          value: 'meta-llama/llama-3.1-70b-instruct',
-                          child: Text('Llama 3.1 70B (Ücretsiz)'),
+                          value: 'anthropic/claude-haiku-4.5',
+                          child: Text('Claude Haiku 4.5 (Kaliteli & Hızlı)'),
+                        ),
+
+                        // Google Gemini Serisi
+                        const DropdownMenuItem<String>(
+                          value: 'google/gemini-2.5-flash-preview-09-2025',
+                          child: Text('Gemini 2.5 Flash (Yeni)'),
                         ),
                         const DropdownMenuItem<String>(
-                          value: 'anthropic/claude-3-haiku',
-                          child: Text('Claude 3 Haiku (En Kaliteli)'),
+                          value: 'google/gemini-2.5-flash-lite',
+                          child: Text('Gemini 2.5 Flash Lite (Hızlı)'),
+                        ),
+                        const DropdownMenuItem<String>(
+                          value: 'google/gemini-2.5-flash-lite-preview-09-2025',
+                          child: Text('Gemini 2.5 Flash Lite Preview'),
+                        ),
+                        const DropdownMenuItem<String>(
+                          value: 'google/gemini-2.5-flash-lite-preview-06-17',
+                          child: Text('Gemini 2.5 Flash Lite (06-17)'),
+                        ),
+
+                        // OpenAI GPT Serisi
+                        const DropdownMenuItem<String>(
+                          value: 'openai/gpt-5-mini',
+                          child: Text('GPT-5 Mini (Yeni)'),
+                        ),
+                        const DropdownMenuItem<String>(
+                          value: 'openai/gpt-5-nano',
+                          child: Text('GPT-5 Nano (Ultra Hızlı)'),
+                        ),
+                        const DropdownMenuItem<String>(
+                          value: 'openai/gpt-oss-120b',
+                          child: Text('GPT OSS 120B'),
+                        ),
+                        const DropdownMenuItem<String>(
+                          value: 'openai/gpt-4.1-mini',
+                          child: Text('GPT-4.1 Mini'),
+                        ),
+                        const DropdownMenuItem<String>(
+                          value: 'openai/gpt-4o-mini',
+                          child: Text('GPT-4o Mini (Ucuz)'),
+                        ),
+
+                        // DeepSeek Serisi
+                        const DropdownMenuItem<String>(
+                          value: 'deepseek/deepseek-v3.2-exp',
+                          child: Text('DeepSeek v3.2 (Deneysel)'),
+                        ),
+                        const DropdownMenuItem<String>(
+                          value: 'deepseek/deepseek-v3.1-terminus',
+                          child: Text('DeepSeek v3.1 Terminus'),
+                        ),
+
+                        // Meta Llama Serisi
+                        const DropdownMenuItem<String>(
+                          value: 'meta-llama/llama-4-maverick',
+                          child: Text('Llama 4 Maverick'),
+                        ),
+                        const DropdownMenuItem<String>(
+                          value: 'meta-llama/llama-4-maverick:free',
+                          child: Text('Llama 4 Maverick (Ücretsiz)'),
+                        ),
+                        const DropdownMenuItem<String>(
+                          value: 'meta-llama/llama-3.3-70b-instruct',
+                          child: Text('Llama 3.3 70B'),
+                        ),
+
+                        // Diğer Modeller
+                        const DropdownMenuItem<String>(
+                          value: 'mistralai/voxtral-small-24b-2507',
+                          child: Text('Mistral Voxtral 24B'),
+                        ),
+                        const DropdownMenuItem<String>(
+                          value: 'qwen/qwen3-vl-8b-instruct',
+                          child: Text('Qwen3 VL 8B'),
                         ),
                       ],
                       onChanged: (value) {
@@ -200,6 +359,21 @@ class _CoachSettingsScreenState extends State<CoachSettingsScreen> {
                       ),
                       obscureText: true,
                     ),
+                    const SizedBox(height: 16),
+                    // Test API Connection Button
+                    SizedBox(
+                      width: double.infinity,
+                      child: ElevatedButton.icon(
+                        onPressed: _testApiConnection,
+                        icon: const Icon(Icons.cloud_sync),
+                        label: const Text('API Bağlantısını Test Et'),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.blue,
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                        ),
+                      ),
+                    ),
                   ],
                 ),
               ),
@@ -230,17 +404,19 @@ class _CoachSettingsScreenState extends State<CoachSettingsScreen> {
                     ),
                     const SizedBox(height: 16),
                     Text(
-                      'Her $_messageFrequency dakikada bir mesaj',
+                      _messageFrequencySeconds == 20
+                          ? '20 saniyede bir mesaj'
+                          : 'Her ${_messageFrequencySeconds ~/ 60} dakikada bir mesaj',
                       style: const TextStyle(fontSize: 16),
                     ),
                     Slider(
-                      value: _messageFrequency.toDouble(),
-                      min: 1,
+                      value: _getSliderValue().toDouble(),
+                      min: 0,
                       max: 10,
-                      divisions: 9,
-                      label: '$_messageFrequency dk',
+                      divisions: 10,
+                      label: _getSliderLabel(),
                       onChanged: (value) {
-                        setState(() => _messageFrequency = value.toInt());
+                        setState(() => _messageFrequencySeconds = _getSecondsFromSlider(value.toInt()));
                       },
                     ),
                     const Text(
@@ -296,6 +472,22 @@ class _CoachSettingsScreenState extends State<CoachSettingsScreen> {
         ],
       ),
     );
+  }
+
+  // Slider helper metodları
+  int _getSliderValue() {
+    if (_messageFrequencySeconds == 20) return 0;
+    return _messageFrequencySeconds ~/ 60; // Dakikaya çevir
+  }
+
+  String _getSliderLabel() {
+    if (_messageFrequencySeconds == 20) return '20sn';
+    return '${_messageFrequencySeconds ~/ 60}dk';
+  }
+
+  int _getSecondsFromSlider(int sliderValue) {
+    if (sliderValue == 0) return 20;
+    return sliderValue * 60; // Dakikayı saniyeye çevir
   }
 
   @override

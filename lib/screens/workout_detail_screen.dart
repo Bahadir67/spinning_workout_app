@@ -16,7 +16,7 @@ import '../services/bluetooth_service.dart';
 import '../services/ai_coach_service.dart';
 import '../widgets/coach_message_overlay.dart';
 import 'workout_summary_screen.dart';
-import 'hr_connection_screen.dart';
+import 'sensor_connection_screen.dart';
 
 class WorkoutDetailScreen extends StatefulWidget {
   final Workout workout;
@@ -86,6 +86,12 @@ class _WorkoutDetailScreenState extends State<WorkoutDetailScreen> {
   CoachMessage? _currentCoachMessage;
   int _lastCoachCheckSecond = -1;
 
+  // WorkoutMetrics için
+  WorkoutType? _workoutType;              // Workout tipi (başlangıçta tespit)
+  List<double> _powerHistoryForNP = [];   // NP hesaplama için (30s rolling)
+  double _averagePower = 0;               // Anlık average power
+  double _averageCadence = 0;             // Anlık average cadence
+
   @override
   void initState() {
     super.initState();
@@ -115,6 +121,9 @@ class _WorkoutDetailScreenState extends State<WorkoutDetailScreen> {
 
     // AI Coach'ı başlat
     _coachService.initialize();
+
+    // Workout tipini tespit et (AI için kritik!)
+    _workoutType = widget.workout.detectWorkoutType();
   }
 
   /// Bluetooth sensörlerini başlat (HR, Power, Cadence)
@@ -314,7 +323,7 @@ class _WorkoutDetailScreenState extends State<WorkoutDetailScreen> {
               await Navigator.push(
                 context,
                 MaterialPageRoute(
-                  builder: (context) => const HRConnectionScreen(),
+                  builder: (context) => const SensorConnectionScreen(),
                 ),
               );
             },
@@ -380,8 +389,8 @@ class _WorkoutDetailScreenState extends State<WorkoutDetailScreen> {
     _powerSubscription?.cancel();
     _cadenceSubscription?.cancel();
     _audioPlayer.dispose();
-    // AI Coach overlay'ini kapat
-    CoachMessageManager.hide();
+    // AI Coach overlay ve kuyruğunu temizle
+    CoachMessageManager.clearQueue();
     _coachService.reset();
     // Orientation'ı geri al
     SystemChrome.setPreferredOrientations([
@@ -583,6 +592,25 @@ class _WorkoutDetailScreenState extends State<WorkoutDetailScreen> {
         _elapsedSeconds,
         powerToRecord,
       ));
+
+      // NP hesaplama için power history tracking (son 30 saniye)
+      _powerHistoryForNP.add(powerToRecord.toDouble());
+      if (_powerHistoryForNP.length > 30) {
+        _powerHistoryForNP.removeAt(0);
+      }
+
+      // Average power hesapla (tüm history)
+      _averagePower = _powerHistory
+          .map((p) => p.watts.toDouble())
+          .reduce((a, b) => a + b) / _powerHistory.length;
+    }
+
+    // Average cadence hesapla
+    // Eğer sensör bağlıysa gerçek cadence kullan
+    if (_isCadenceConnected && _currentCadence > 0) {
+      _averageCadence = _currentCadence.toDouble();
+    } else if (_currentTargetCadence > 0) {
+      _averageCadence = _currentTargetCadence.toDouble();
     }
   }
 
@@ -646,18 +674,35 @@ class _WorkoutDetailScreenState extends State<WorkoutDetailScreen> {
       ftp: widget.workout.ftp,
     );
 
+    // WorkoutMetrics hesapla (yeni sistem!)
+    final workoutMetrics = WorkoutMetrics.calculate(
+      currentPower: actualPower,
+      averagePower: _averagePower,
+      currentCadence: actualCadence.toDouble(),
+      averageCadence: _averageCadence,
+      currentHeartRate: _currentHR > 0 ? _currentHR : null,
+      averageHeartRate: _hrHistory.isNotEmpty
+          ? _hrHistory.map((h) => h.bpm).reduce((a, b) => a + b) ~/ _hrHistory.length
+          : null,
+      ftp: widget.workout.ftp,
+      workoutType: _workoutType ?? WorkoutType.mixed,
+      powerHistory: _powerHistoryForNP,  // Son 30 saniye için NP
+    );
+
     // Mesaj üret (forceType varsa force edilir)
     try {
       final message = await _coachService.generateMessage(
         context: coachContext,
+        metrics: workoutMetrics,  // ⚡ YENİ: Workout-aware AI!
         forceType: forceType,
+        // category: null,  // Otomatik seçilir (%40 teknik, %30 tarih, %20 güncel, %10 motivasyon)
       );
       if (message != null && mounted) {
         setState(() {
           _currentCoachMessage = message;
         });
-        // Overlay göster
-        CoachMessageManager.show(context, message);
+        // ⚡ YENİ: Queue sistemi - mesajlar birbirini kesmez!
+        CoachMessageManager.enqueue(context, message);
       }
     } catch (e) {
       print('Coach mesaj hatası: $e');
@@ -958,7 +1003,7 @@ class _WorkoutDetailScreenState extends State<WorkoutDetailScreen> {
                               await Navigator.push(
                                 context,
                                 MaterialPageRoute(
-                                  builder: (context) => const HRConnectionScreen(),
+                                  builder: (context) => const SensorConnectionScreen(),
                                 ),
                               );
                             },
@@ -972,34 +1017,6 @@ class _WorkoutDetailScreenState extends State<WorkoutDetailScreen> {
                           ),
                         ],
 
-                        const SizedBox(height: 14),
-                        const Divider(height: 1, color: Colors.grey),
-                        const SizedBox(height: 14),
-
-                        // Hedef power ve cadence (kompakt)
-                        Container(
-                          padding: const EdgeInsets.all(10),
-                          decoration: BoxDecoration(
-                            color: Colors.blue.withOpacity(0.15),
-                            borderRadius: BorderRadius.circular(6),
-                          ),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              const Text('HEDEF', style: TextStyle(fontSize: 9, color: Colors.grey, letterSpacing: 1)),
-                              const SizedBox(height: 6),
-                              Text(
-                                '${(_currentTargetPower * widget.workout.ftp).round()}W',
-                                style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: Colors.blue),
-                              ),
-                              const SizedBox(height: 2),
-                              Text(
-                                '${_currentTargetCadence} RPM',
-                                style: const TextStyle(fontSize: 12, color: Colors.blue),
-                              ),
-                            ],
-                          ),
-                        ),
                       ],
                     ),
                   ),
