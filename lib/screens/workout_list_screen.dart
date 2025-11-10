@@ -388,88 +388,36 @@ class _WorkoutListScreenState extends State<WorkoutListScreen> {
 
     // Mevcut seçili sesi oku
     final prefs = await SharedPreferences.getInstance();
-    final currentVoiceName = prefs.getString('tts_voice_name');
 
-    final selectedVoice = await showDialog<Map<dynamic, dynamic>>(
+    // Mevcut ayarları yükle
+    String? currentVoiceName = prefs.getString('tts_voice_name');
+    String? currentVoiceLocale = prefs.getString('tts_voice_locale');
+    double currentRate = prefs.getDouble('tts_rate') ?? 0.55;
+    double currentPitch = prefs.getDouble('tts_pitch') ?? 1.0;
+    double currentVolume = prefs.getDouble('tts_volume') ?? 1.0;
+
+    // Seçili sesi bul
+    Map<dynamic, dynamic>? selectedVoice;
+    if (currentVoiceName != null) {
+      selectedVoice = turkishVoices.firstWhere(
+        (v) => v['name'] == currentVoiceName,
+        orElse: () => turkishVoices[0],
+      );
+    } else {
+      selectedVoice = turkishVoices[0];
+    }
+
+    await showDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Ses Seçimi'),
-        content: SizedBox(
-          width: double.maxFinite,
-          child: ListView.builder(
-            shrinkWrap: true,
-            itemCount: turkishVoices.length,
-            itemBuilder: (context, index) {
-              final voice = turkishVoices[index];
-              final name = voice['name'].toString();
-              final locale = voice['locale'].toString();
-              final isSelected = name == currentVoiceName;
-
-              // Kadın/erkek tahmini
-              String gender = '';
-              if (name.contains('female') || name.contains('-f-') || name.contains('ama')) {
-                gender = '👩 ';
-              } else if (name.contains('male') || name.contains('-m-')) {
-                gender = '👨 ';
-              }
-
-              return Card(
-                margin: const EdgeInsets.symmetric(vertical: 4),
-                child: ListTile(
-                  title: Text('$gender$locale'),
-                  subtitle: Text(name, style: const TextStyle(fontSize: 11)),
-                  trailing: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      IconButton(
-                        icon: const Icon(Icons.volume_up, color: Colors.blue),
-                        tooltip: 'Test',
-                        onPressed: () async {
-                          // Test et
-                          await tts.setVoice({"name": name, "locale": locale});
-                          await tts.speak("Merhaba, ben $locale sesi");
-                        },
-                      ),
-                      // Check işareti sadece seçili seste göster
-                      if (isSelected)
-                        const Padding(
-                          padding: EdgeInsets.only(left: 8),
-                          child: Icon(Icons.check_circle, color: Colors.green, size: 24),
-                        ),
-                      if (!isSelected)
-                        IconButton(
-                          icon: const Icon(Icons.check_circle_outline, color: Colors.grey),
-                          tooltip: 'Seç',
-                          onPressed: () => Navigator.pop(context, voice),
-                        ),
-                    ],
-                  ),
-                ),
-              );
-            },
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('İptal'),
-          ),
-        ],
+      builder: (context) => _VoiceSettingsDialog(
+        voices: turkishVoices,
+        initialVoice: selectedVoice!,
+        initialRate: currentRate,
+        initialPitch: currentPitch,
+        initialVolume: currentVolume,
+        tts: tts,
       ),
     );
-
-    if (selectedVoice != null) {
-      // Seçilen sesi kaydet
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setString('tts_voice_name', selectedVoice['name']);
-      await prefs.setString('tts_voice_locale', selectedVoice['locale']);
-
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Ses seçildi: ${selectedVoice['locale']}')),
-        );
-      }
-    }
   }
 
   /// Show FTP settings
@@ -739,6 +687,226 @@ class _WorkoutListScreenState extends State<WorkoutListScreen> {
           ),
         ],
       ),
+    );
+  }
+}
+
+/// Ses ayarları dialog'u
+class _VoiceSettingsDialog extends StatefulWidget {
+  final List<dynamic> voices;
+  final Map<dynamic, dynamic> initialVoice;
+  final double initialRate;
+  final double initialPitch;
+  final double initialVolume;
+  final dynamic tts;
+
+  const _VoiceSettingsDialog({
+    required this.voices,
+    required this.initialVoice,
+    required this.initialRate,
+    required this.initialPitch,
+    required this.initialVolume,
+    required this.tts,
+  });
+
+  @override
+  State<_VoiceSettingsDialog> createState() => _VoiceSettingsDialogState();
+}
+
+class _VoiceSettingsDialogState extends State<_VoiceSettingsDialog> {
+  late Map<dynamic, dynamic> _selectedVoice;
+  late double _rate;
+  late double _pitch;
+  late double _volume;
+
+  @override
+  void initState() {
+    super.initState();
+    _selectedVoice = widget.initialVoice;
+    _rate = widget.initialRate;
+    _pitch = widget.initialPitch;
+    _volume = widget.initialVolume;
+  }
+
+  Future<void> _testVoice() async {
+    try {
+      // TTS'i başlat
+      await widget.tts.setLanguage("tr-TR");
+
+      // Kısa bekleme - engine'in hazır olması için
+      await Future.delayed(const Duration(milliseconds: 300));
+
+      // Ayarları uygula - String'e cast et
+      await widget.tts.setVoice({
+        "name": _selectedVoice['name'].toString(),
+        "locale": _selectedVoice['locale'].toString()
+      });
+      await widget.tts.setSpeechRate(_rate);
+      await widget.tts.setPitch(_pitch);
+      await widget.tts.setVolume(_volume);
+
+      // Test mesajını oku
+      await widget.tts.speak("Merhaba, bu ses ayarlarını test ediyorum");
+    } catch (e) {
+      print('Test voice hatası: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Ses testi başarısız: $e')),
+        );
+      }
+    }
+  }
+
+  Future<void> _saveSettings() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('tts_voice_name', _selectedVoice['name']);
+    await prefs.setString('tts_voice_locale', _selectedVoice['locale']);
+    await prefs.setDouble('tts_rate', _rate);
+    await prefs.setDouble('tts_pitch', _pitch);
+    await prefs.setDouble('tts_volume', _volume);
+
+    if (mounted) {
+      Navigator.pop(context);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Ses ayarları kaydedildi!')),
+      );
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('Ses Ayarları'),
+      content: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Ses seçimi (ComboBox)
+            const Text('Ses:', style: TextStyle(fontWeight: FontWeight.bold)),
+            const SizedBox(height: 8),
+            DropdownButtonFormField<Map<dynamic, dynamic>>(
+              value: _selectedVoice,
+              isExpanded: true,
+              decoration: const InputDecoration(
+                border: OutlineInputBorder(),
+                contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              ),
+              items: widget.voices.map<DropdownMenuItem<Map<dynamic, dynamic>>>((voice) {
+                final name = voice['name'].toString();
+                final locale = voice['locale'].toString();
+
+                // Kadın/erkek tahmini
+                String gender = '';
+                if (name.contains('female') || name.contains('-f-') || name.contains('ama')) {
+                  gender = '👩 ';
+                } else if (name.contains('male') || name.contains('-m-')) {
+                  gender = '👨 ';
+                }
+
+                return DropdownMenuItem<Map<dynamic, dynamic>>(
+                  value: voice,
+                  child: Text('$gender$locale', overflow: TextOverflow.ellipsis),
+                );
+              }).toList(),
+              onChanged: (value) {
+                if (value != null) {
+                  setState(() => _selectedVoice = value);
+                }
+              },
+            ),
+
+            const SizedBox(height: 24),
+
+            // Hız slider
+            const Text('Hız:', style: TextStyle(fontWeight: FontWeight.bold)),
+            Row(
+              children: [
+                const Text('Yavaş', style: TextStyle(fontSize: 12)),
+                Expanded(
+                  child: Slider(
+                    value: _rate,
+                    min: 0.3,
+                    max: 1.0,
+                    divisions: 14,
+                    label: _rate.toStringAsFixed(2),
+                    onChanged: (value) => setState(() => _rate = value),
+                  ),
+                ),
+                const Text('Hızlı', style: TextStyle(fontSize: 12)),
+              ],
+            ),
+
+            const SizedBox(height: 16),
+
+            // Ses tonu slider
+            const Text('Ses Tonu:', style: TextStyle(fontWeight: FontWeight.bold)),
+            Row(
+              children: [
+                const Text('Kalın', style: TextStyle(fontSize: 12)),
+                Expanded(
+                  child: Slider(
+                    value: _pitch,
+                    min: 0.5,
+                    max: 2.0,
+                    divisions: 15,
+                    label: _pitch.toStringAsFixed(1),
+                    onChanged: (value) => setState(() => _pitch = value),
+                  ),
+                ),
+                const Text('İnce', style: TextStyle(fontSize: 12)),
+              ],
+            ),
+
+            const SizedBox(height: 16),
+
+            // Ses şiddeti slider
+            const Text('Ses Şiddeti:', style: TextStyle(fontWeight: FontWeight.bold)),
+            Row(
+              children: [
+                const Text('Sessiz', style: TextStyle(fontSize: 12)),
+                Expanded(
+                  child: Slider(
+                    value: _volume,
+                    min: 0.0,
+                    max: 1.0,
+                    divisions: 10,
+                    label: _volume.toStringAsFixed(1),
+                    onChanged: (value) => setState(() => _volume = value),
+                  ),
+                ),
+                const Text('Yüksek', style: TextStyle(fontSize: 12)),
+              ],
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('İptal'),
+        ),
+        const SizedBox(width: 8),
+        ElevatedButton.icon(
+          onPressed: _testVoice,
+          icon: const Icon(Icons.volume_up),
+          label: const Text('Test Et'),
+          style: ElevatedButton.styleFrom(
+            backgroundColor: Colors.blue,
+            foregroundColor: Colors.white,
+          ),
+        ),
+        const SizedBox(width: 8),
+        ElevatedButton.icon(
+          onPressed: _saveSettings,
+          icon: const Icon(Icons.check),
+          label: const Text('Kaydet'),
+          style: ElevatedButton.styleFrom(
+            backgroundColor: Colors.green,
+            foregroundColor: Colors.white,
+          ),
+        ),
+      ],
     );
   }
 }

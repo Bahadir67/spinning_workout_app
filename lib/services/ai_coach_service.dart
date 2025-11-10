@@ -27,19 +27,21 @@ class AICoachService {
 
   // Ayarlar
   CoachMode _mode = CoachMode.ruleBased;
-  String _selectedModel = 'minimax/minimax-m2';
+  String _selectedModel = 'google/gemini-2.0-flash-001';  // Varsayılan: Coaching için en iyi
   int _messageFrequencySeconds = 180; // saniye (varsayılan 3 dakika)
 
   // Cache (maliyet azaltma)
   final Map<String, CoachMessage> _cache = {};
   DateTime? _lastMessageTime;
+  DateTime? _lastSegmentMessageTime;  // Son segment mesajı zamanı
+  bool _isGeneratingMessage = false;  // Mesaj oluşturma kilidi
 
   /// Servisi başlat - ayarları yükle
   Future<void> initialize() async {
     final prefs = await SharedPreferences.getInstance();
     _apiKey = prefs.getString('openrouter_api_key') ?? _defaultApiKey;
     _mode = CoachMode.values[prefs.getInt('coach_mode') ?? 1]; // Default: ruleBased
-    _selectedModel = prefs.getString('coach_model') ?? 'minimax/minimax-m2';
+    _selectedModel = prefs.getString('coach_model') ?? 'google/gemini-2.0-flash-001';
     _messageFrequencySeconds = prefs.getInt('coach_frequency_seconds') ?? 180; // Default: 3 dakika
   }
 
@@ -101,7 +103,7 @@ class AICoachService {
           ],
           'max_tokens': 50,
         }),
-      ).timeout(const Duration(seconds: 10));
+      ).timeout(const Duration(seconds: 60));  // Reasoning modelleri için uzun timeout
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
@@ -141,9 +143,17 @@ class AICoachService {
   Future<CoachMessage?> generateMessage({
     required CoachContext context,
     required WorkoutMetrics metrics,  // Yeni parametre
+    required int workoutElapsedSeconds,  // Yeni: Toplam workout süresi
     CoachMessageType? forceType,
     MessageCategory? category,  // Yeni parametre
   }) async {
+    // Şu anda bir mesaj oluşturuluyorsa, yeni istek yapma (segment mesajları hariç)
+    if (_isGeneratingMessage &&
+        forceType != CoachMessageType.segmentStart &&
+        forceType != CoachMessageType.segmentEnd) {
+      return null;
+    }
+
     // Kapalıysa sadece segment bilgilendirmeleri göster
     if (_mode == CoachMode.off) {
       // Sadece segment başlangıç/bitiş bilgilendirmeleri
@@ -155,52 +165,106 @@ class AICoachService {
       return null;
     }
 
+    // İlk 3 dakika (180 saniye) hiç mesaj verme
+    if (workoutElapsedSeconds < 180) {
+      return null;
+    }
+
     // Çok sık mesaj gönderme kontrolü
     // Segment başlangıç/bitiş mesajları her zaman gösterilir
     if (forceType != CoachMessageType.segmentStart &&
-        forceType != CoachMessageType.segmentEnd &&
-        _lastMessageTime != null) {
-      final timeSinceLastMessage = DateTime.now().difference(_lastMessageTime!);
-      // Normal mesajlar için ayarlanan frekans kadar ara
-      if (timeSinceLastMessage.inSeconds < _messageFrequencySeconds) {
-        return null;
+        forceType != CoachMessageType.segmentEnd) {
+
+      // Segment mesajından sonra en az 5 saniye bekle
+      if (_lastSegmentMessageTime != null) {
+        final timeSinceSegment = DateTime.now().difference(_lastSegmentMessageTime!);
+        if (timeSinceSegment.inSeconds < 5) {
+          print('⏰ Segment sonrası bekleme: ${timeSinceSegment.inSeconds}s < 5s');
+          return null;
+        }
+      }
+
+      // Son mesaj zamanı kontrolü
+      if (_lastMessageTime != null) {
+        final timeSinceLastMessage = DateTime.now().difference(_lastMessageTime!);
+        // Normal mesajlar için ayarlanan frekans kadar ara
+        if (timeSinceLastMessage.inSeconds < _messageFrequencySeconds) {
+          print('⏰ Mesaj atlandı: ${timeSinceLastMessage.inSeconds}s < ${_messageFrequencySeconds}s');
+          return null;
+        }
       }
     }
 
     // Cache kontrolü
     final cacheKey = _generateCacheKey(context, forceType);
     if (_cache.containsKey(cacheKey)) {
-      _lastMessageTime = DateTime.now();
+      // Segment mesajları timer'ı sıfırlamamalı
+      if (forceType != CoachMessageType.segmentStart &&
+          forceType != CoachMessageType.segmentEnd) {
+        _lastMessageTime = DateTime.now();
+      } else {
+        // Cache'ten dönen segment mesajı da segment timer'ını günceller
+        _lastSegmentMessageTime = DateTime.now();
+        print('⏰ Cache segment mesajı, 5 saniye AI mesajı engellendi');
+      }
       return _cache[cacheKey];
     }
 
     CoachMessage? message;
 
-    // AI modunda ve API key varsa
-    if (_mode == CoachMode.aiPowered && isApiKeySet) {
-      try {
-        message = await _generateAIMessage(context, metrics, forceType, category);
-      } catch (e) {
-        print('AI mesaj hatası, kural bazlıya geçiliyor: $e');
-        // Fallback: Kural bazlı
+    // Lock - mesaj oluşturma başladı (segment mesajları hariç)
+    if (forceType != CoachMessageType.segmentStart &&
+        forceType != CoachMessageType.segmentEnd) {
+      _isGeneratingMessage = true;
+    }
+
+    try {
+      // AI modunda ve API key varsa
+      if (_mode == CoachMode.aiPowered && isApiKeySet) {
+        try {
+          print('🤖 AI mesajı oluşturuluyor... (Type: ${forceType ?? "normal"})');
+          message = await _generateAIMessage(context, metrics, forceType, category);
+          if (message != null) {
+            print('✅ AI mesajı başarılı: ${message.message.substring(0, message.message.length > 50 ? 50 : message.message.length)}...');
+          }
+        } catch (e) {
+          print('❌ AI mesaj hatası, kural bazlıya geçiliyor: $e');
+          // Fallback: Kural bazlı
+          message = _generateRuleBasedMessage(context, forceType, category);
+          print('📋 Kural bazlı mesaj kullanıldı: ${message?.message}');
+        }
+      } else {
+        // Kural bazlı
+        print('📋 Direkt kural bazlı mod aktif (Type: ${forceType ?? "normal"})');
         message = _generateRuleBasedMessage(context, forceType, category);
       }
-    } else {
-      // Kural bazlı
-      message = _generateRuleBasedMessage(context, forceType, category);
-    }
 
-    if (message != null) {
-      _cache[cacheKey] = message;
-      _lastMessageTime = DateTime.now();
+      if (message != null) {
+        _cache[cacheKey] = message;
 
-      // Cache'i temizle (max 20 mesaj)
-      if (_cache.length > 20) {
-        _cache.clear();
+        // Sadece AI mesajları ve normal mesajlar için timer'ı güncelle
+        // Segment başlangıç/bitiş mesajları timer'ı sıfırlamamalı
+        if (forceType != CoachMessageType.segmentStart &&
+            forceType != CoachMessageType.segmentEnd) {
+          _lastMessageTime = DateTime.now();
+          print('⏰ Timer güncellendi: ${_lastMessageTime!.toIso8601String()}');
+        } else {
+          // Segment mesajı gönderildi, segment timer'ını güncelle
+          _lastSegmentMessageTime = DateTime.now();
+          print('⏰ Segment mesajı gönderildi, 5 saniye AI mesajı engellendi');
+        }
+
+        // Cache'i temizle (max 20 mesaj)
+        if (_cache.length > 20) {
+          _cache.clear();
+        }
       }
-    }
 
-    return message;
+      return message;
+    } finally {
+      // Unlock - mesaj oluşturma bitti
+      _isGeneratingMessage = false;
+    }
   }
 
   /// Sadece segment bilgilendirme mesajı (Coach kapalıyken)
@@ -260,10 +324,12 @@ class AICoachService {
           },
         ],
         'max_tokens': _getMaxTokens(selectedCategory),
-        'temperature': 0.7,
-        'stop': ['\n\n', '...', ' -'],  // Yarım cümle engelleme
+        'temperature': 0.9,  // Daha çeşitli ve yaratıcı mesajlar için
+        'top_p': 0.95,
+        'frequency_penalty': 0.5,  // Tekrarları azalt
+        'presence_penalty': 0.3,  // Yeni konulara teşvik et
       }),
-    ).timeout(const Duration(seconds: 5));
+    ).timeout(const Duration(seconds: 60));  // Reasoning models için yeterli süre
 
     if (response.statusCode == 200) {
       final data = jsonDecode(response.body);
@@ -283,31 +349,50 @@ class AICoachService {
   String _buildSystemPrompt(MessageCategory category) {
     switch (category) {
       case MessageCategory.technicalFeedback:
-        return 'Sen bilimsel araştırmalara dayanan profesyonel bisiklet antrenörüsün.\n'
-            'ÖNEMLİ KURALLAR:\n'
-            '1. WORKOUT HEDEF DEĞERLERİNİ DİKKATE AL - Hedef kadans 80 rpm ise, 90 rpm yapmasını söyleyemezsin!\n'
-            '2. Sadece workout parametreleri içinde tavsiyelerde bulun.\n'
-            '3. Bu workout tipi için bilimsel araştırma bulgularını paylaş.\n'
-            '4. Teknik tavsiye ver: Kadans, güç, nefes, pedal tekniği, pozisyon.\n'
-            '5. Mesaj uzunluğu serbest, kullanıcı scroll edebilir.\n'
-            '6. Cümleleri MUTLAKA tamamla, yarım bırakma.\n'
-            '\nÖrnek: "HIIT antremanları için 2019 Journal of Applied Physiology araştırması, 30 saniyelik maksimum eforların VO2 max artışında etkili olduğunu gösterdi. Hedef kadansını korumaya çalış!"';
+        return '''Sen deneyimli bir bisiklet antrenörüsün. Gerçek bir koç gibi konuş.
+
+KURALLAR:
+1. WORKOUT HEDEFLERİNE UYGUN TAVSİYE - Hedef kadans 80 ise 90 söyleyemezsin!
+2. TEK BİR cümle yaz. Bir fikir, bir mesaj.
+3. 5-30 kelime arası olsun.
+4. Cümlelerini tamamla.
+
+FARKLI MESAJ TİPLERİ (biri seç):
+- Kısa motivasyon: "Harika gidiyorsun!", "Kadansı koru, süper!", "Çok iyi!"
+- Teknik tavsiye: "Kadansı yükselt, derin nefes al."
+- Bilimsel bilgi: "Sweet Spot aerobik kapasitenin temelini atar."
+- Performans analizi: "IF'in mükemmel, FTP'yi geliştiriyorsun!"
+
+KONULAR:
+Kadans, güç, kalp atışı, nefes, pozisyon, FTP, enerji, tempo.
+
+HER MESAJ FARKLI OLSUN!''';
 
       case MessageCategory.cyclingHistory:
-        return 'Bisiklet tarihçisi ve spor yazarısın.\n'
-            'Enteresan bisiklet tarihi bilgisi ver: Yarışlar, tırmanışlar, rekorlar, efsane bisikletçiler.\n'
-            'Mesaj uzunluğu serbest. Cümlelerini tamamla.';
+        return '''Sen bisiklet tarihine aşina spor yazarısın.
+
+TEK BİR bisiklet tarihi gerçeği ver. 15-35 kelime.
+Efsane tırmanışlar, yarışlar, rekorlar, bisikletçiler.
+
+HER MESAJ FARKLI, cümleler tamamlanmış olsun.''';
 
       case MessageCategory.currentEvents:
-        return 'Bisiklet gazetecisisin.\n'
-            'ÖNEMLİ: Bugün 2025 Kasım. Sadece 2024-2025 sezonundan DOĞRU tarihlerde olan olayları paylaş.\n'
-            'Güncel yarış haberi ver: Tour, Giro, Vuelta, klasikler.\n'
-            'Mesaj uzunluğu serbest. Cümlelerini tamamla.';
+        return '''Sen bisiklet gazetecisisin.
+
+TEK BİR güncel haber ver. 15-30 kelime.
+Grand Tour, Klasikler, Dünya Şampiyonası, transferler.
+
+Bugün 2025 Kasım. Doğru tarihler ver! HER MESAJ FARKLI!''';
 
       case MessageCategory.motivation:
-        return 'Esprili ve arkadaşça antrenörsün.\n'
-            'Esprili motivasyon mesajı ver.\n'
-            'Mesaj uzunluğu serbest. Cümlelerini tamamla.';
+        return '''Sen esprili ve destekleyici bir antrenörsün.
+
+TEK BİR motivasyon mesajı ver. 5-25 kelime arası.
+- Bazen ÇOK KISA: "Süpersin!", "Devam et!", "İyi gidiyorsun!"
+- Bazen esprili: "Bacaklar yanarsa, yağlar yanar!"
+- Bazen cesaretlendirici: "Zor kısım geride kaldı, şimdi topla!"
+
+SADECE BİR CÜMLE, liste değil. Doğal ve samimi konuş.''';
     }
   }
 
@@ -317,32 +402,43 @@ class AICoachService {
 
     switch (category) {
       case MessageCategory.technicalFeedback:
-        buffer.writeln('WORKOUT TİPİ: ${metrics.workoutType.toString().split('.').last}');
-        buffer.writeln('Segment: ${context.segmentName} (${context.segmentType})');
-        buffer.writeln('\nMevcut Metrikler:');
-        buffer.writeln('- Güç: ${metrics.currentPower.toInt()}W (Ort: ${metrics.averagePower.toInt()}W, NP: ${metrics.normalizedPower.toInt()}W)');
-        buffer.writeln('- IF: ${metrics.intensityFactor.toStringAsFixed(2)}');
-        buffer.writeln('- Kadans: ${metrics.currentCadence.toInt()} rpm (Ort: ${metrics.averageCadence.toInt()} rpm)');
+        // Durum analizi
+        final powerDiff = metrics.currentPower - context.targetPower;
+        final cadenceDiff = metrics.currentCadence.toInt() - context.targetCadence;
+
+        buffer.writeln('Mevcut Durum:');
+        buffer.writeln('- Güç: ${metrics.currentPower.toInt()}W / Hedef: ${context.targetPower.toInt()}W (${powerDiff > 0 ? '+' : ''}${powerDiff.toInt()}W)');
+        buffer.writeln('- Kadans: ${metrics.currentCadence.toInt()} rpm / Hedef: ${context.targetCadence} rpm (${cadenceDiff > 0 ? '+' : ''}$cadenceDiff)');
+        buffer.writeln('- IF: ${metrics.intensityFactor.toStringAsFixed(2)} | NP: ${metrics.normalizedPower.toInt()}W');
         if (metrics.currentHeartRate != null) {
-          buffer.writeln('- HR: ${metrics.currentHeartRate} bpm (Ort: ${metrics.averageHeartRate} bpm)');
+          buffer.writeln('- Kalp: ${metrics.currentHeartRate} bpm (${context.hrZone ?? "Unknown"} zone)');
         }
-        buffer.writeln('\nWorkout Hedefleri (BU DEĞERLERİ AŞMA!):');
-        buffer.writeln('- Hedef Güç: ${context.targetPower.toInt()}W');
-        buffer.writeln('- Hedef Kadans: ${context.targetCadence} rpm');
         buffer.writeln('- Power Zone: ${context.powerZone}');
-        buffer.writeln('\nGörev: Bu workout tipi için bilimsel araştırma bilgisi ver ve hedefler dahilinde teknik tavsiyelerde bulun.');
+        buffer.writeln('');
+
+        // Durum değerlendirmesi
+        if (powerDiff.abs() < 10 && cadenceDiff.abs() < 5) {
+          buffer.writeln('Durum: Performans iyi!');
+        } else if (powerDiff.abs() > 20 || cadenceDiff.abs() > 10) {
+          buffer.writeln('Durum: Hedeflerden sapma var.');
+        } else {
+          buffer.writeln('Durum: Normal.');
+        }
+
+        buffer.writeln('');
+        buffer.writeln('Görev: Genel mesaj ver (segment ile ilgisiz). Duruma uygun motivasyon veya teknik tavsiye. Her mesaj farklı!');
         break;
 
       case MessageCategory.cyclingHistory:
-        buffer.writeln('Bisiklet tarihinden enteresan bir bilgi ver (yarış, tırmanış, rekor, efsane bisikletçi).');
+        buffer.writeln('Bir bisiklet tarihi bilgisi ver. Her seferinde farklı konu seç!');
         break;
 
       case MessageCategory.currentEvents:
-        buffer.writeln('Bugün 2025 Kasım. 2024-2025 sezonundan güncel ve doğru tarihli yarış haberi ver.');
+        buffer.writeln('2024-2025 sezonundan bir yarış haberi ver. Her seferinde farklı haber!');
         break;
 
       case MessageCategory.motivation:
-        buffer.writeln('Esprili ve arkadaşça motivasyon mesajı ver.');
+        buffer.writeln('Kısa ve samimi motivasyon mesajı ver. Bazen çok kısa (5 kelime), bazen biraz uzun. Her mesaj farklı!');
         break;
     }
 
@@ -353,12 +449,12 @@ class AICoachService {
   int _getMaxTokens(MessageCategory category) {
     switch (category) {
       case MessageCategory.technicalFeedback:
-        return 300;  // Bilimsel araştırma + teknik tavsiyeleri için uzun mesajlar
+        return 200;  // Çeşitli uzunluklar: kısa motivasyon veya orta teknik tavsiye
       case MessageCategory.cyclingHistory:
       case MessageCategory.currentEvents:
-        return 150;  // Tarih ve güncel olaylar için orta uzunluk
+        return 120;  // Orta uzunlukta bilgi
       case MessageCategory.motivation:
-        return 100;  // Motivasyon için kısa-orta uzunluk
+        return 80;  // Kısa ve öz motivasyon
     }
   }
 
@@ -607,9 +703,152 @@ class AICoachService {
     }
   }
 
+  /// Workout başlangıcında genel bakış ve analiz mesajı oluştur
+  Future<CoachMessage?> generateWorkoutOverview({
+    required String workoutName,
+    required String workoutDescription,
+    required int totalDurationMinutes,
+    required double avgPower,
+    required double normalizedPower,
+    required int ftp,
+    required List<String> segmentTypes,  // ['Warmup', 'SteadyState', 'Interval', 'Cooldown']
+    required String workoutStructure,  // Detaylı yapı açıklaması
+  }) async {
+    print('🤖 generateWorkoutOverview çağrıldı. Mode: $_mode, API Key: ${isApiKeySet ? "VAR" : "YOK"}');
+
+    // Kapalıysa veya kural bazlıysa overview verme
+    if (_mode == CoachMode.off || _mode == CoachMode.ruleBased) {
+      print('⚠️ Overview atlandı: Mode $_mode');
+      return null;
+    }
+
+    // AI modunda ve API key varsa
+    if (_mode == CoachMode.aiPowered && !isApiKeySet) {
+      print('❌ Overview atlandı: API key yok!');
+      return null;
+    }
+
+    // Mesaj oluşturma kilidi varsa bekle
+    if (_isGeneratingMessage) {
+      print('⚠️ Overview atlandı: Başka bir mesaj oluşturuluyor');
+      return null;
+    }
+
+    // Lock set
+    _isGeneratingMessage = true;
+
+    try {
+      final systemPrompt = '''
+Sen deneyimli bir bisiklet antrenörüsün. Workout başlamadan önce kısa bir analiz yapıyorsun.
+
+MESAJ STİLİ:
+- 30-50 kelime arası, öz ve motive edici
+- Workout'un ana hedefini vurgula
+- Bilimsel temelleri basitçe açıkla
+- Pozitif ve heyecan verici ol
+
+KONULAR:
+- Bu workout ne kazandırır? (FTP, VO2 max, dayanıklılık, güç, vb.)
+- Hangi enerji sistemlerini çalıştırır?
+- Beklenen fizyolojik gelişme nedir?
+
+Cümlelerini tamamla. Samimi ve profesyonel ol.
+''';
+
+      final userPrompt = '''
+Workout: $workoutName
+Açıklama: $workoutDescription
+Süre: $totalDurationMinutes dk | Ort Güç: ${avgPower.toInt()}W (FTP'nin ${(avgPower / ftp * 100).toInt()}%)
+Yapı: ${segmentTypes.join(', ')}
+
+$workoutStructure
+
+Bu workout'u kısaca analiz et ve motivasyonla açıkla.
+''';
+
+      final response = await http.post(
+        Uri.parse(_apiUrl),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $_apiKey',
+          'HTTP-Referer': 'com.spinworkout.spinning_workout_app',
+          'X-Title': 'Spinning Workout App',
+        },
+        body: jsonEncode({
+          'model': _selectedModel,
+          'messages': [
+            {'role': 'system', 'content': systemPrompt},
+            {'role': 'user', 'content': userPrompt},
+          ],
+          'max_tokens': 500,  // Uzun açıklama için
+          'temperature': 0.7,
+        }),
+      ).timeout(const Duration(seconds: 60));  // Reasoning models için yeterli süre
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        final messageText = data['choices'][0]['message']['content'].trim();
+
+        // Timer'ı güncelle
+        _lastMessageTime = DateTime.now();
+
+        return CoachMessage(
+          message: messageText,
+          type: CoachMessageType.information,
+          category: MessageCategory.technicalFeedback,
+        );
+      }
+    } catch (e) {
+      print('Workout overview hatası: $e');
+    } finally {
+      // Unlock
+      _isGeneratingMessage = false;
+    }
+
+    return null;
+  }
+
+  /// OpenAI TTS ile ses oluştur (MP3 olarak döner)
+  Future<List<int>?> generateSpeech(String text) async {
+    if (!isApiKeySet) {
+      print('⚠️ TTS için API key yok');
+      return null;
+    }
+
+    try {
+      print('🔊 OpenAI TTS çağrılıyor: ${text.substring(0, 30)}...');
+
+      final response = await http.post(
+        Uri.parse('https://api.openai.com/v1/audio/speech'),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $_apiKey',
+        },
+        body: jsonEncode({
+          'model': 'tts-1',  // tts-1-hd daha kaliteli ama yavaş
+          'input': text,
+          'voice': 'nova',  // alloy, echo, fable, onyx, nova, shimmer
+          'speed': 1.0,
+        }),
+      ).timeout(const Duration(seconds: 30));
+
+      if (response.statusCode == 200) {
+        print('✅ TTS başarılı: ${response.bodyBytes.length} bytes');
+        return response.bodyBytes;
+      } else {
+        print('❌ TTS hatası: ${response.statusCode} - ${response.body}');
+        return null;
+      }
+    } catch (e) {
+      print('❌ TTS exception: $e');
+      return null;
+    }
+  }
+
   /// Servisi sıfırla (yeni antrenman için)
   void reset() {
     _cache.clear();
     _lastMessageTime = null;
+    _isGeneratingMessage = false;
   }
 }

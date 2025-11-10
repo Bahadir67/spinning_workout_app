@@ -33,6 +33,9 @@ class CoachMessage {
     DateTime? timestamp,
   }) : timestamp = timestamp ?? DateTime.now();
 
+  /// AI tarafından üretilmiş mi?
+  bool get isAIGenerated => category != null;
+
   /// Mesaj tipine göre ikon
   IconData get icon {
     switch (type) {

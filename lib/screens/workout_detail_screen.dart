@@ -106,8 +106,14 @@ class _WorkoutDetailScreenState extends State<WorkoutDetailScreen> {
     // Ekranı açık tut
     WakelockPlus.enable();
 
+    // Audio player ayarları (beep için)
+    _setupAudioPlayer();
+
     // TTS ayarları
     _initTts();
+
+    // AI Coach servisini başlat
+    _coachService.initialize();
 
     // Zoom başlangıç değerleri
     _maxX = widget.workout.durationSeconds.toDouble();
@@ -353,32 +359,76 @@ class _WorkoutDetailScreenState extends State<WorkoutDetailScreen> {
     }
   }
 
+  /// Audio player'ı yapılandır - müzik durdurmasın
+  Future<void> _setupAudioPlayer() async {
+    try {
+      // Android için audio context ayarla
+      await _audioPlayer.setAudioContext(
+        AudioContext(
+          android: AudioContextAndroid(
+            contentType: AndroidContentType.sonification,
+            usageType: AndroidUsageType.notificationEvent,
+            audioFocus: AndroidAudioFocus.gainTransientMayDuck,
+          ),
+          iOS: AudioContextIOS(
+            category: AVAudioSessionCategory.ambient,
+            options: [AVAudioSessionOptions.mixWithOthers],
+          ),
+        ),
+      );
+    } catch (e) {
+      print('Audio player setup hatası: $e');
+    }
+  }
+
   Future<void> _initTts() async {
-    await _tts.setLanguage("tr-TR");
-    await _tts.setSpeechRate(0.5);
-    await _tts.setVolume(1.0);
-    await _tts.setPitch(1.0);
+    try {
+      await _tts.setLanguage("tr-TR");
 
-    // Kaydedilmiş ses tercihini yükle
-    final prefs = await SharedPreferences.getInstance();
-    final savedVoiceName = prefs.getString('tts_voice_name');
-    final savedVoiceLocale = prefs.getString('tts_voice_locale');
+      // Kaydedilmiş ses ayarlarını yükle
+      try {
+        final prefs = await SharedPreferences.getInstance();
 
-    if (savedVoiceName != null && savedVoiceLocale != null) {
-      // Kaydedilmiş sesi kullan
-      await _tts.setVoice({"name": savedVoiceName, "locale": savedVoiceLocale});
-    } else {
-      // Kaydedilmiş ses yoksa, ilk Türkçe kadın sesini bul
-      final voices = await _tts.getVoices;
-      if (voices != null && voices.isNotEmpty) {
-        final turkishVoices = voices.where((voice) =>
-          voice['locale'].toString().toLowerCase().startsWith('tr')).toList();
+        // Ses parametrelerini yükle (varsayılanlar: rate=0.55, pitch=1.0, volume=1.0)
+        final savedRate = prefs.getDouble('tts_rate') ?? 0.55;
+        final savedPitch = prefs.getDouble('tts_pitch') ?? 1.0;
+        final savedVolume = prefs.getDouble('tts_volume') ?? 1.0;
 
-        if (turkishVoices.isNotEmpty) {
-          // İlk Türkçe sesi seç
-          await _tts.setVoice({"name": turkishVoices[0]['name'], "locale": turkishVoices[0]['locale']});
-        }
+        await _tts.setSpeechRate(savedRate);
+        await _tts.setPitch(savedPitch);
+        await _tts.setVolume(savedVolume);
+
+        print('✅ TTS: Ayarlar yüklendi - Rate: $savedRate, Pitch: $savedPitch, Volume: $savedVolume');
+      } catch (e) {
+        // Hata varsa varsayılan değerleri kullan
+        await _tts.setSpeechRate(0.55);
+        await _tts.setPitch(1.0);
+        await _tts.setVolume(1.0);
+        print('⚠️ TTS ayarları yüklenemedi, varsayılanlar kullanılıyor: $e');
       }
+
+      // TTS engine'in hazır olması için kısa bir bekleme
+      await Future.delayed(const Duration(milliseconds: 500));
+
+      // Kaydedilmiş ses tercihini yükle (varsa)
+      try {
+        final prefs = await SharedPreferences.getInstance();
+        final savedVoiceName = prefs.getString('tts_voice_name');
+        final savedVoiceLocale = prefs.getString('tts_voice_locale');
+
+        if (savedVoiceName != null && savedVoiceLocale != null) {
+          // Kullanıcının seçtiği sesi kullan
+          await _tts.setVoice({"name": savedVoiceName, "locale": savedVoiceLocale});
+          print('✅ TTS: Kaydedilmiş ses yüklendi: $savedVoiceName');
+        } else {
+          print('ℹ️ TTS: Varsayılan Türkçe ses kullanılıyor');
+        }
+      } catch (e) {
+        print('⚠️ TTS voice setting hatası (varsayılan ses kullanılacak): $e');
+        // Ses seçimi başarısız olsa bile devam et - varsayılan sesi kullan
+      }
+    } catch (e) {
+      print('❌ TTS init hatası: $e');
     }
   }
 
@@ -420,6 +470,14 @@ class _WorkoutDetailScreenState extends State<WorkoutDetailScreen> {
       _isRunning = true;
       _isPaused = false;
       _startTime = DateTime.now();
+    });
+
+    // Workout başladığında AI Coach'a genel bakış için bilgi gönder
+    // İlk 3 dakika sonra gönder
+    Future.delayed(const Duration(seconds: 180), () {
+      if (mounted) {
+        _sendWorkoutOverviewToCoach();
+      }
     });
 
     _timer = Timer.periodic(const Duration(seconds: 1), (timer) {
@@ -639,12 +697,15 @@ class _WorkoutDetailScreenState extends State<WorkoutDetailScreen> {
 
     // Segment değişimi kontrolü - force mesaj gönder
     CoachMessageType? forceType;
+    bool isSegmentMessage = false;
     if (segmentElapsed == 0) {
       // Segment başlangıcı
       forceType = CoachMessageType.segmentStart;
+      isSegmentMessage = true;
     } else if (segmentElapsed == currentSegment.durationSeconds - 30 && currentSegment.durationSeconds > 40) {
       // Segment bitişi (30 saniye kala, eğer segment 40 saniyeden uzunsa)
       forceType = CoachMessageType.segmentEnd;
+      isSegmentMessage = true;
     }
 
     // Coach context oluştur
@@ -689,23 +750,118 @@ class _WorkoutDetailScreenState extends State<WorkoutDetailScreen> {
       powerHistory: _powerHistoryForNP,  // Son 30 saniye için NP
     );
 
-    // Mesaj üret (forceType varsa force edilir)
+    // Mesaj üret
+    // ÖNEMLİ: Segment mesajı varsa SADECE onu gönder, başka mesaj üretme
+    if (isSegmentMessage) {
+      // Sadece segment mesajını gönder
+      try {
+        final message = await _coachService.generateMessage(
+          context: coachContext,
+          metrics: workoutMetrics,
+          workoutElapsedSeconds: _elapsedSeconds,
+          forceType: forceType,  // segmentStart veya segmentEnd
+        );
+
+        if (message != null && mounted) {
+          setState(() {
+            _currentCoachMessage = message;
+          });
+          CoachMessageManager.enqueue(context, message);
+        }
+      } catch (e) {
+        print('Segment mesaj hatası: $e');
+      }
+      // Segment mesajı gönderildi, başka mesaj üretme!
+      return;
+    }
+
+    // Normal AI mesajları (segment mesajı yoksa)
     try {
       final message = await _coachService.generateMessage(
         context: coachContext,
-        metrics: workoutMetrics,  // ⚡ YENİ: Workout-aware AI!
-        forceType: forceType,
-        // category: null,  // Otomatik seçilir (%40 teknik, %30 tarih, %20 güncel, %10 motivasyon)
+        metrics: workoutMetrics,
+        workoutElapsedSeconds: _elapsedSeconds,
+        forceType: null,  // Normal AI mesajı
       );
+
       if (message != null && mounted) {
         setState(() {
           _currentCoachMessage = message;
         });
-        // ⚡ YENİ: Queue sistemi - mesajlar birbirini kesmez!
         CoachMessageManager.enqueue(context, message);
       }
     } catch (e) {
       print('Coach mesaj hatası: $e');
+    }
+  }
+
+  // Workout başlangıcında genel bakış mesajı gönder
+  Future<void> _sendWorkoutOverviewToCoach() async {
+    print('🏋️ Workout overview gönderiliyor...');
+    try {
+      // Segment tiplerini topla
+      final segmentTypes = widget.workout.segments
+          .map((s) => s.type.toString().split('.').last)
+          .toSet()
+          .toList();
+
+      // Workout yapısını detaylıca oluştur
+      final structureBuffer = StringBuffer();
+      for (var i = 0; i < widget.workout.segments.length; i++) {
+        final segment = widget.workout.segments[i];
+        final duration = (segment.durationSeconds / 60).toStringAsFixed(1);
+        final powerRange = segment.powerLow == segment.powerHigh
+            ? '${(segment.powerLow * 100).toInt()}% FTP'
+            : '${(segment.powerLow * 100).toInt()}-${(segment.powerHigh * 100).toInt()}% FTP';
+
+        structureBuffer.writeln(
+          '${i + 1}. ${segment.type.toString().split('.').last}: ${duration}dk @ $powerRange'
+        );
+      }
+
+      final message = await _coachService.generateWorkoutOverview(
+        workoutName: widget.workout.name,
+        workoutDescription: widget.workout.description,
+        totalDurationMinutes: (widget.workout.durationSeconds / 60).round(),
+        avgPower: widget.workout.getAveragePower(),
+        normalizedPower: widget.workout.calculateNP(),
+        ftp: widget.workout.ftp,
+        segmentTypes: segmentTypes,
+        workoutStructure: structureBuffer.toString(),
+      );
+
+      if (message != null && mounted) {
+        print('✅ Workout overview alındı: ${message.message.substring(0, 50)}...');
+        setState(() {
+          _currentCoachMessage = message;
+        });
+        // Workout overview mesajını göster
+        CoachMessageManager.enqueue(context, message);
+      } else {
+        print('⚠️ Workout overview mesajı null döndü!');
+        // Debug: Ekranda göster
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('⚠️ AI Coach: Workout overview alınamadı. Coach mode ve API key kontrol edin.'),
+              backgroundColor: Colors.orange,
+              duration: Duration(seconds: 5),
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      print('❌ Workout overview hatası: $e');
+      // Debug: Ekranda göster
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('❌ AI Coach hatası: $e'),
+            backgroundColor: Colors.red,
+            duration: const Duration(seconds: 5),
+          ),
+        );
+      }
     }
   }
 

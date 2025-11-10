@@ -162,6 +162,8 @@ class StravaService {
       if (response.statusCode == 201) {
         final data = jsonDecode(response.body);
         final uploadId = data['id'];
+        print('✅ Strava upload başarılı! Upload ID: $uploadId');
+        print('📦 Response: ${response.body}');
 
         // Wait for processing (optional)
         await _waitForUpload(uploadId);
@@ -169,8 +171,12 @@ class StravaService {
         // Clean up FIT file
         await fitFile.delete();
 
-        return data['activity_id']?.toString() ?? uploadId.toString();
+        final activityId = data['activity_id']?.toString() ?? uploadId.toString();
+        print('🎯 Activity ID: $activityId');
+        return activityId;
       } else {
+        print('❌ Strava upload başarısız! Status: ${response.statusCode}');
+        print('📦 Response: ${response.body}');
         throw Exception('Upload failed: ${response.body}');
       }
     } catch (e) {
@@ -197,11 +203,13 @@ class StravaService {
           if (data['activity_id'] != null) {
             // Additional check: make sure there's no error
             if (data['error'] == null && data['status'] != 'Your activity is still being processed.') {
-              print('Upload complete: Activity ID ${data['activity_id']} is ready');
+              print('✅ Upload complete: Activity ID ${data['activity_id']} is ready');
               return; // Upload complete and ready
             } else {
-              print('Upload status: ${data['status']}');
+              print('⏳ Upload status: ${data['status']}');
             }
+          } else {
+            print('⏳ Waiting... Upload ID: $uploadId (${i+1}/30)');
           }
         }
       } catch (e) {
