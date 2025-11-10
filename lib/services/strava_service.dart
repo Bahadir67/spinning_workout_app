@@ -34,8 +34,11 @@ class StravaService {
         'redirect_uri': REDIRECT_URI,
         'response_type': 'code',
         'scope': 'activity:write,activity:read_all',
-        'approval_prompt': 'auto',
+        'approval_prompt': 'force', // Force to ensure we get the right scope
       });
+
+      print('Auth URL: $authUrl');
+      print('Requested scope: activity:write,activity:read_all');
 
       // Launch browser
       if (await canLaunchUrl(authUrl)) {
@@ -52,6 +55,7 @@ class StravaService {
   /// Handle OAuth callback (call this from deep link handler)
   Future<bool> handleAuthCallback(String code) async {
     try {
+      print('Exchanging code for token...');
       final response = await http.post(
         Uri.parse(TOKEN_URL),
         body: {
@@ -62,19 +66,30 @@ class StravaService {
         },
       );
 
+      print('Token response status: ${response.statusCode}');
+
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
         _accessToken = data['access_token'];
         _tokenExpiry = DateTime.now().add(Duration(seconds: data['expires_in']));
+
+        // Log athlete info and scope
+        print('=== STRAVA AUTH SUCCESS ===');
+        print('Athlete: ${data['athlete']?['firstname']} ${data['athlete']?['lastname']} (ID: ${data['athlete']?['id']})');
+        print('Scope granted: ${data['scope']}');
+        print('Token expires in: ${data['expires_in']} seconds');
+        print('==========================');
 
         // Save tokens
         await _saveTokens(data['access_token'], data['refresh_token']);
 
         return true;
       } else {
+        print('Token exchange failed: ${response.body}');
         throw Exception('Token exchange failed: ${response.body}');
       }
     } catch (e) {
+      print('Callback handling error: $e');
       throw Exception('Callback handling error: $e');
     }
   }
@@ -127,9 +142,24 @@ class StravaService {
     }
 
     try {
+      print('=== STARTING STRAVA UPLOAD ===');
+
       // Generate FIT file
+      print('Generating FIT file...');
       final fitFilePath = await FitFileGenerator.generateFitFile(activity);
       final fitFile = File(fitFilePath);
+      final fitFileSize = await fitFile.length();
+      print('FIT file created: $fitFilePath ($fitFileSize bytes)');
+
+      // Log activity details
+      print('Activity details:');
+      print('  - Name: ${activity.workoutName}');
+      print('  - Duration: ${activity.durationSeconds}s');
+      print('  - Start: ${activity.startTime}');
+      print('  - HR data points: ${activity.heartRateData.length}');
+      print('  - Power data points: ${activity.powerData.length}');
+      print('  - Avg HR: ${activity.avgHeartRate} bpm');
+      print('  - Avg Power: ${activity.avgPower.round()}W');
 
       // Create multipart request
       final request = http.MultipartRequest(
@@ -149,34 +179,52 @@ class StravaService {
       request.fields['trainer'] = '1'; // Mark as trainer/indoor
       request.fields['activity_type'] = 'VirtualRide';
 
+      print('Upload fields:');
+      print('  - data_type: fit');
+      print('  - trainer: 1');
+      print('  - activity_type: VirtualRide');
+
       // Add FIT file
       request.files.add(await http.MultipartFile.fromPath(
         'file',
         fitFilePath,
       ));
 
+      print('Sending request to Strava...');
+
       // Send request
       final streamedResponse = await request.send();
       final response = await http.Response.fromStream(streamedResponse);
 
+      print('Response status: ${response.statusCode}');
+      print('Response body: ${response.body}');
+
       if (response.statusCode == 201) {
         final data = jsonDecode(response.body);
         final uploadId = data['id'];
-        print('✅ Strava upload başarılı! Upload ID: $uploadId');
-        print('📦 Response: ${response.body}');
 
-        // Wait for processing (optional)
-        await _waitForUpload(uploadId);
+        print('Upload successful! Upload ID: $uploadId');
+        print('Waiting for Strava to process the activity...');
 
-        // Clean up FIT file
-        await fitFile.delete();
+        // Wait for processing and get activity ID
+        final activityId = await _waitForUpload(uploadId);
 
-        final activityId = data['activity_id']?.toString() ?? uploadId.toString();
-        print('🎯 Activity ID: $activityId');
-        return activityId;
+        // Clean up FIT file (non-blocking, just log errors)
+        try {
+          if (await fitFile.exists()) {
+            await fitFile.delete();
+            print('FIT file cleaned up successfully');
+          }
+        } catch (e) {
+          print('Warning: Could not delete FIT file: $e');
+          // Don't throw - upload was successful
+        }
+
+        // Return activity ID or upload ID as fallback
+        final finalActivityId = activityId ?? data['activity_id']?.toString() ?? uploadId.toString();
+        print('Final activity ID: $finalActivityId');
+        return finalActivityId;
       } else {
-        print('❌ Strava upload başarısız! Status: ${response.statusCode}');
-        print('📦 Response: ${response.body}');
         throw Exception('Upload failed: ${response.body}');
       }
     } catch (e) {
@@ -184,8 +232,8 @@ class StravaService {
     }
   }
 
-  /// Wait for upload to be processed
-  Future<void> _waitForUpload(int uploadId) async {
+  /// Wait for upload to be processed and return activity ID
+  Future<String?> _waitForUpload(int uploadId) async {
     for (var i = 0; i < 30; i++) {
       // Try for 30 seconds
       await Future.delayed(const Duration(seconds: 1));
@@ -199,26 +247,35 @@ class StravaService {
         if (response.statusCode == 200) {
           final data = jsonDecode(response.body);
 
-          // Check if upload is complete and no errors
+          // Check if there's an error
+          if (data['error'] != null) {
+            print('Upload error from Strava: ${data['error']}');
+            return null;
+          }
+
+          // Check if upload is complete and has activity_id
           if (data['activity_id'] != null) {
-            // Additional check: make sure there's no error
-            if (data['error'] == null && data['status'] != 'Your activity is still being processed.') {
-              print('✅ Upload complete: Activity ID ${data['activity_id']} is ready');
-              return; // Upload complete and ready
-            } else {
-              print('⏳ Upload status: ${data['status']}');
+            final activityId = data['activity_id'].toString();
+            final status = data['status'] ?? '';
+
+            print('Upload status: $status');
+            print('Activity ID found: $activityId');
+
+            // If status is not "processing", consider it ready
+            if (status != 'Your activity is still being processed.') {
+              print('Upload complete! Activity ID: $activityId is ready');
+              return activityId;
             }
-          } else {
-            print('⏳ Waiting... Upload ID: $uploadId (${i+1}/30)');
           }
         }
       } catch (e) {
-        print('Waiting for upload: $e');
+        print('Waiting for upload (attempt ${i + 1}/30): $e');
         // Continue waiting
       }
     }
 
-    print('Upload wait timeout - proceeding anyway');
+    print('Upload wait timeout - Strava is still processing');
+    return null; // Timeout, activity may still be processing
   }
 
   /// Upload photo to activity
@@ -258,14 +315,21 @@ class StravaService {
       print('Photo upload response: ${response.statusCode}');
       print('Photo upload body: ${response.body}');
 
-      // Clean up temp file
+      // Store result before cleanup
+      final bool uploadSuccess = (response.statusCode == 201 || response.statusCode == 200);
+
+      // Clean up temp file (non-blocking)
       try {
-        await photoFile.delete();
+        if (await photoFile.exists()) {
+          await photoFile.delete();
+          print('Temp photo file cleaned up');
+        }
       } catch (e) {
-        print('Failed to delete temp file: $e');
+        print('Warning: Could not delete temp photo file: $e');
+        // Don't affect upload result
       }
 
-      if (response.statusCode == 201 || response.statusCode == 200) {
+      if (uploadSuccess) {
         print('Photo uploaded successfully!');
         return true;
       } else {
