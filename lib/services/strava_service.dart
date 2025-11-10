@@ -166,8 +166,16 @@ class StravaService {
         // Wait for processing (optional)
         await _waitForUpload(uploadId);
 
-        // Clean up FIT file
-        await fitFile.delete();
+        // Clean up FIT file (non-blocking, just log errors)
+        try {
+          if (await fitFile.exists()) {
+            await fitFile.delete();
+            print('FIT file cleaned up successfully');
+          }
+        } catch (e) {
+          print('Warning: Could not delete FIT file: $e');
+          // Don't throw - upload was successful
+        }
 
         return data['activity_id']?.toString() ?? uploadId.toString();
       } else {
@@ -250,14 +258,21 @@ class StravaService {
       print('Photo upload response: ${response.statusCode}');
       print('Photo upload body: ${response.body}');
 
-      // Clean up temp file
+      // Store result before cleanup
+      final bool uploadSuccess = (response.statusCode == 201 || response.statusCode == 200);
+
+      // Clean up temp file (non-blocking)
       try {
-        await photoFile.delete();
+        if (await photoFile.exists()) {
+          await photoFile.delete();
+          print('Temp photo file cleaned up');
+        }
       } catch (e) {
-        print('Failed to delete temp file: $e');
+        print('Warning: Could not delete temp photo file: $e');
+        // Don't affect upload result
       }
 
-      if (response.statusCode == 201 || response.statusCode == 200) {
+      if (uploadSuccess) {
         print('Photo uploaded successfully!');
         return true;
       } else {
