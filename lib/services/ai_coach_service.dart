@@ -144,8 +144,16 @@ class AICoachService {
     CoachMessageType? forceType,
     MessageCategory? category,  // Yeni parametre
   }) async {
-    // Kapalıysa mesaj üretme
-    if (_mode == CoachMode.off) return null;
+    // Kapalıysa sadece segment bilgilendirmeleri göster
+    if (_mode == CoachMode.off) {
+      // Sadece segment başlangıç/bitiş bilgilendirmeleri
+      if (forceType == CoachMessageType.segmentStart ||
+          forceType == CoachMessageType.segmentEnd) {
+        return _generateSegmentInfoMessage(context, forceType!);
+      }
+      // Diğer tüm mesajları engelle (tarihçe, güncel olaylar, motivasyon vs.)
+      return null;
+    }
 
     // Çok sık mesaj gönderme kontrolü
     // Segment başlangıç/bitiş mesajları her zaman gösterilir
@@ -193,6 +201,29 @@ class AICoachService {
     }
 
     return message;
+  }
+
+  /// Sadece segment bilgilendirme mesajı (Coach kapalıyken)
+  CoachMessage _generateSegmentInfoMessage(CoachContext context, CoachMessageType type) {
+    String message;
+
+    if (type == CoachMessageType.segmentStart) {
+      final duration = (context.segmentDurationSeconds / 60).toInt();
+      message = '${context.segmentName} başlıyor! ${duration}dk, ${context.targetPower.toInt()}W';
+    } else {
+      final remaining = context.segmentDurationSeconds - context.segmentElapsedSeconds;
+      if (remaining < 30) {
+        message = 'Son ${remaining} saniye!';
+      } else {
+        message = 'Son 1 dakika!';
+      }
+    }
+
+    return CoachMessage(
+      message: message,
+      type: type,
+      category: MessageCategory.technicalFeedback,
+    );
   }
 
   /// OpenRouter API ile mesaj oluştur (kategori bazlı)
@@ -252,28 +283,31 @@ class AICoachService {
   String _buildSystemPrompt(MessageCategory category) {
     switch (category) {
       case MessageCategory.technicalFeedback:
-        return 'Sen profesyonel bisiklet antrenörüsün. WORKOUT TİPİNİ DİKKATE AL. '
-            'SADECE 1 CÜMLE YAZ ve CÜMLEYİ MUTLAKA TAMAMLA. Maksimum 10 kelime. Cümle sonunda nokta koy. '
-            'TEKNİK TAVSİYE ver: Kadans, güç, nefes, pedal, pozisyon. '
-            'Slogan değil, AKSIYON. Yarım cümle YASAK!';
+        return 'Sen bilimsel araştırmalara dayanan profesyonel bisiklet antrenörüsün.\n'
+            'ÖNEMLİ KURALLAR:\n'
+            '1. WORKOUT HEDEF DEĞERLERİNİ DİKKATE AL - Hedef kadans 80 rpm ise, 90 rpm yapmasını söyleyemezsin!\n'
+            '2. Sadece workout parametreleri içinde tavsiyelerde bulun.\n'
+            '3. Bu workout tipi için bilimsel araştırma bulgularını paylaş.\n'
+            '4. Teknik tavsiye ver: Kadans, güç, nefes, pedal tekniği, pozisyon.\n'
+            '5. Mesaj uzunluğu serbest, kullanıcı scroll edebilir.\n'
+            '6. Cümleleri MUTLAKA tamamla, yarım bırakma.\n'
+            '\nÖrnek: "HIIT antremanları için 2019 Journal of Applied Physiology araştırması, 30 saniyelik maksimum eforların VO2 max artışında etkili olduğunu gösterdi. Hedef kadansını korumaya çalış!"';
 
       case MessageCategory.cyclingHistory:
-        return 'Bisiklet tarihçisi ve spor yazarısın. '
-            'SADECE 1 CÜMLE YAZ ve CÜMLEYİ MUTLAKA TAMAMLA. Maksimum 12 kelime. Cümle sonunda nokta koy. '
-            'Enteresan bisiklet tarihi bilgisi ver: Yarışlar, tırmanışlar, rekorlar. '
-            'Yarım cümle YASAK!';
+        return 'Bisiklet tarihçisi ve spor yazarısın.\n'
+            'Enteresan bisiklet tarihi bilgisi ver: Yarışlar, tırmanışlar, rekorlar, efsane bisikletçiler.\n'
+            'Mesaj uzunluğu serbest. Cümlelerini tamamla.';
 
       case MessageCategory.currentEvents:
-        return 'Bisiklet gazetecisisin. '
-            'SADECE 1 CÜMLE YAZ ve CÜMLEYİ MUTLAKA TAMAMLA. Maksimum 12 kelime. Cümle sonunda nokta koy. '
-            'Güncel yarış haberi ver: Tour, Giro, Pogačar, Vingegaard. '
-            'Yarım cümle YASAK!';
+        return 'Bisiklet gazetecisisin.\n'
+            'ÖNEMLİ: Bugün 2025 Kasım. Sadece 2024-2025 sezonundan DOĞRU tarihlerde olan olayları paylaş.\n'
+            'Güncel yarış haberi ver: Tour, Giro, Vuelta, klasikler.\n'
+            'Mesaj uzunluğu serbest. Cümlelerini tamamla.';
 
       case MessageCategory.motivation:
-        return 'Esprili ve arkadaşça antrenörsün. '
-            'SADECE 1 CÜMLE YAZ ve CÜMLEYİ MUTLAKA TAMAMLA. Maksimum 10 kelime. Cümle sonunda nokta/ünlem koy. '
-            'Esprili motivasyon: "Bu segmenti geçersen şampiyonsun!" tarzı. '
-            'Yarım cümle YASAK!';
+        return 'Esprili ve arkadaşça antrenörsün.\n'
+            'Esprili motivasyon mesajı ver.\n'
+            'Mesaj uzunluğu serbest. Cümlelerini tamamla.';
     }
   }
 
@@ -284,23 +318,27 @@ class AICoachService {
     switch (category) {
       case MessageCategory.technicalFeedback:
         buffer.writeln('WORKOUT TİPİ: ${metrics.workoutType.toString().split('.').last}');
-        buffer.writeln('Metrikler:');
+        buffer.writeln('Segment: ${context.segmentName} (${context.segmentType})');
+        buffer.writeln('\nMevcut Metrikler:');
         buffer.writeln('- Güç: ${metrics.currentPower.toInt()}W (Ort: ${metrics.averagePower.toInt()}W, NP: ${metrics.normalizedPower.toInt()}W)');
         buffer.writeln('- IF: ${metrics.intensityFactor.toStringAsFixed(2)}');
         buffer.writeln('- Kadans: ${metrics.currentCadence.toInt()} rpm (Ort: ${metrics.averageCadence.toInt()} rpm)');
         if (metrics.currentHeartRate != null) {
           buffer.writeln('- HR: ${metrics.currentHeartRate} bpm (Ort: ${metrics.averageHeartRate} bpm)');
         }
+        buffer.writeln('\nWorkout Hedefleri (BU DEĞERLERİ AŞMA!):');
         buffer.writeln('- Hedef Güç: ${context.targetPower.toInt()}W');
-        buffer.writeln('\nWorkout tipine göre bilimsel analiz yap ve aksiyon ver.');
+        buffer.writeln('- Hedef Kadans: ${context.targetCadence} rpm');
+        buffer.writeln('- Power Zone: ${context.powerZone}');
+        buffer.writeln('\nGörev: Bu workout tipi için bilimsel araştırma bilgisi ver ve hedefler dahilinde teknik tavsiyelerde bulun.');
         break;
 
       case MessageCategory.cyclingHistory:
-        buffer.writeln('Bisiklet tarihinden enteresan bir bilgi ver.');
+        buffer.writeln('Bisiklet tarihinden enteresan bir bilgi ver (yarış, tırmanış, rekor, efsane bisikletçi).');
         break;
 
       case MessageCategory.currentEvents:
-        buffer.writeln('2024-2025 sezonundan güncel yarış haberi veya ünlü bisikletçi bilgisi ver.');
+        buffer.writeln('Bugün 2025 Kasım. 2024-2025 sezonundan güncel ve doğru tarihli yarış haberi ver.');
         break;
 
       case MessageCategory.motivation:
@@ -315,21 +353,22 @@ class AICoachService {
   int _getMaxTokens(MessageCategory category) {
     switch (category) {
       case MessageCategory.technicalFeedback:
-        return 60;  // Türkçe için daha fazla token gerekiyor
+        return 300;  // Bilimsel araştırma + teknik tavsiyeleri için uzun mesajlar
       case MessageCategory.cyclingHistory:
       case MessageCategory.currentEvents:
+        return 150;  // Tarih ve güncel olaylar için orta uzunluk
       case MessageCategory.motivation:
-        return 80;  // Türkçe cümleler için yeterli token
+        return 100;  // Motivasyon için kısa-orta uzunluk
     }
   }
 
-  /// Rastgele kategori seç (dağılım: %40 teknik, %30 tarih, %20 güncel, %10 motivasyon)
+  /// Rastgele kategori seç (dağılım: %85 teknik, %5 tarih, %5 güncel, %5 motivasyon)
   MessageCategory _selectCategory() {
     final random = Random();
     final value = random.nextInt(100);
-    if (value < 40) return MessageCategory.technicalFeedback;
-    if (value < 70) return MessageCategory.cyclingHistory;
-    if (value < 90) return MessageCategory.currentEvents;
+    if (value < 85) return MessageCategory.technicalFeedback;
+    if (value < 90) return MessageCategory.cyclingHistory;
+    if (value < 95) return MessageCategory.currentEvents;
     return MessageCategory.motivation;
   }
 
@@ -511,19 +550,19 @@ class AICoachService {
     return messages[random.nextInt(messages.length)];
   }
 
-  /// Güncel yarış/medya mesajları
+  /// Güncel yarış/medya mesajları (2024-2025 sezonu)
   String _getCurrentEventsMessage(Random random) {
     final messages = [
-      'Pogačar 2024\'te Giro+Tour çift tacı aldı!',
-      'Vingegaard-Pogačar rekabeti devam ediyor!',
-      'Remco Evenepoel Vuelta şampiyonu!',
-      'Mathieu van der Poel cyclocross efsanesi!',
-      'Wout van Aert: Klasik ve sprint canavarı!',
-      'Primož Roglič: 3 Vuelta şampiyonluğu var!',
-      'Tour de France 2025: 3 hafta, 21 etap!',
-      'Tadej Pogačar UAE takımında parlıyor!',
-      'Giro d\'Italia 2025 Mayıs\'ta başlıyor!',
-      'Egan Bernal sakatlıktan geri dönüyor!',
+      'Pogačar 2024\'te tarihi Giro+Tour çift tacını aldı!',
+      'Remco Evenepoel 2024 Vuelta şampiyonu oldu!',
+      '2024 Tour de France: Pogačar Nice\'te üçüncü kez şampiyon!',
+      '2025 Tour de France 5 Temmuz\'da Grand Départ yapacak!',
+      '2025 Giro d\'Italia 9 Mayıs - 1 Haziran tarihleri arasında!',
+      'Mathieu van der Poel 2024 Paris-Roubaix\'yi kazandı!',
+      'Wout van Aert 2024\'te sakatlıktan döndü!',
+      'Primož Roglič 2024 Vuelta\'da 4. şampiyonluğunu hedefliyor!',
+      'Jonas Vingegaard 2024\'te sakatlıktan sonra Tour\'da 2. oldu!',
+      'Tadej Pogačar UAE Team Emirates\'te 2025 için hazırlanıyor!',
     ];
     return messages[random.nextInt(messages.length)];
   }
