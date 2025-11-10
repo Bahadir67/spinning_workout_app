@@ -61,7 +61,14 @@ class FitFileGenerator {
     buffer.add(_createLapMessage(activity));
 
     // Add record messages (one per second)
-    for (var i = 0; i < activity.heartRateData.length; i++) {
+    // Use the longest data array to ensure we capture all workout data
+    final maxDataPoints = [
+      activity.heartRateData.length,
+      activity.powerData.length,
+      activity.cadenceData.length,
+    ].reduce((a, b) => a > b ? a : b);
+
+    for (var i = 0; i < maxDataPoints; i++) {
       buffer.add(_createRecordMessage(activity, i));
     }
 
@@ -239,17 +246,28 @@ class FitFileGenerator {
     // Data message
     data.addByte(0x05);
 
-    final hrPoint = activity.heartRateData[index];
-    final timestamp = _toFitTime(activity.startTime) + hrPoint.timestamp;
+    // Use the first available data point for timestamp, defaulting to index seconds
+    final timestamp = _toFitTime(activity.startTime) + index;
+
+    // Get HR value if available
+    final heartRate = index < activity.heartRateData.length
+        ? activity.heartRateData[index].bpm
+        : 0;
+
+    // Get cadence value if available
+    final cadence = index < activity.cadenceData.length
+        ? activity.cadenceData[index].rpm
+        : 0;
+
+    // Get power value if available
+    final power = index < activity.powerData.length
+        ? activity.powerData[index].watts.round()
+        : 0;
 
     data.add(_uint32ToBytes(timestamp));
-    data.addByte(hrPoint.bpm);
-    data.addByte(index < activity.cadenceData.length
-        ? activity.cadenceData[index].rpm
-        : 0);
-    data.add(_uint16ToBytes(index < activity.powerData.length
-        ? activity.powerData[index].watts.round()
-        : 0));
+    data.addByte(heartRate);
+    data.addByte(cadence);
+    data.add(_uint16ToBytes(power));
 
     return data.toBytes();
   }
